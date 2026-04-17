@@ -1,0 +1,23 @@
+# Claude Code local settings (per-machine, not for publication)
+.claude/settings.local.json
+
+# Logs + temp
+*.log
+tmp/
+.engineai-installer/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+
+# Secrets (belt and braces)
+*.env
+.env*
+!.env.example
+secrets/
+credentials/
