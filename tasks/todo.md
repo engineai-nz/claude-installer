@@ -4,12 +4,12 @@
 
 ---
 
-## Blockers (do first)
+## Blockers (all cleared)
 
-- [ ] Verify silent-install flags for Claude Desktop on Windows (.exe) + macOS (.dmg)
-- [ ] Find where Claude Desktop stores its Developer Mode flag (both OSes) — so installer can flip it programmatically
-- [ ] Create `engineai-nz/claude-templates` public repo (empty scaffold OK for now)
-- [ ] Create `engineai-nz/claude-installer` public repo and push this project
+- [x] ~~Verify silent-install flags for Claude Desktop on Windows (.exe) + macOS (.dmg)~~ — see `docs/decisions.md`. winget + brew cask primary, direct download fallback.
+- [x] ~~Find where Claude Desktop stores its Developer Mode flag~~ — see `docs/decisions.md`. `developer_settings.json` controls DevTools; Developer tab auto-appears when `claude_desktop_config.json` exists. Gap: confirm the tab on clean VM.
+- [x] ~~Create `engineai-nz/claude-templates` public repo~~ — live at https://github.com/engineai-nz/claude-templates
+- [x] ~~Create `engineai-nz/claude-installer` public repo and push this project~~ — live at https://github.com/engineai-nz/claude-installer
 
 ## V1 build — installer
 
@@ -56,4 +56,8 @@
 
 ## Done
 
--
+- 2026-04-17 — V1 design doc locked and committed
+- 2026-04-17 — Silent-install research logged (winget + brew cask primary paths)
+- 2026-04-17 — Dev-mode-flag research logged (known gap on Developer tab — VM verify needed)
+- 2026-04-17 — `engineai-nz/claude-installer` public repo created and pushed
+- 2026-04-17 — `engineai-nz/claude-templates` public repo created with directory scaffold
