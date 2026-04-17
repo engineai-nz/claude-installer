@@ -121,3 +121,58 @@ Detect MSIX on Windows with `Get-AppxPackage -Name *Claude*`. No registry keys f
 - MCP debugging docs: https://modelcontextprotocol.io/docs/tools/debugging
 - MCP local servers setup: https://modelcontextprotocol.io/docs/develop/connect-local-servers
 - anthropics/claude-code#26073 (MSIX vs standard path split)
+
+---
+
+## 2026-04-17 — Claude Code CLI install path
+
+Native installer on both platforms. No Node, no npm.
+
+- **macOS:** `curl -fsSL https://claude.ai/install.sh | bash` → installs to `~/.claude/` with launcher at `~/.local/bin/claude`. No admin needed.
+- **Windows:** `irm https://claude.ai/install.ps1 | iex` → installs to `%USERPROFILE%\.claude\`. No admin needed. Works in plain PowerShell 5.1+.
+- **Auth:** deferred to first run (`claude` triggers browser OAuth). Installer does NOT call `claude login`.
+- **PATH:** installer modifies user env; requires a fresh shell after install.
+
+**Rejected alternatives:**
+- npm path (`npm install -g @anthropic-ai/claude-code`) — requires Node, bad fit for non-dev clients.
+- winget — no published package as of 2026-04-17.
+- brew cask `claude-code` — works but adds Homebrew dependency; native installer is faster.
+
+---
+
+## 2026-04-17 — Bundle architecture: pre-merged, not runtime-merged
+
+The design doc called for runtime merging of primitives + stack + industry on the client. We changed to **factory-side pre-merge** for V1.
+
+### Why the change
+
+Client-side merging needs a JSON tool. Python 3 on a clean macOS is a stub that triggers Xcode CLT install on first use (1GB GUI download). PowerShell handles JSON natively, but bash without jq is painful. Awk-based merging is fragile.
+
+Pre-merged bundles move the complexity to the factory, which already has Python/Node/everything. Clients get zero-dep installs.
+
+### Architecture
+
+- **Source layout in `claude-templates` stays three-tier:** `core/primitives/`, `stacks/<name>/`, `industries/<name>/`. Maintainable.
+- **`scripts/build-bundles.py`** generates `dist/bundles/<industry>-<stack>.tar.gz` per `(industry, stack)` pair.
+- **`.github/workflows/release.yml`** runs the build on tag push and attaches tarballs to the GitHub release.
+- **Installer** downloads `https://github.com/engineai-nz/claude-templates/releases/latest/download/<industry>-<stack>.tar.gz`, unpacks, drops files in place, substitutes `{{HOME}}`.
+
+### Trade-offs accepted
+
+- N × M tarballs per release (N industries × M stacks). For V1: 1 × 2 = 2 tarballs. For full coverage: 5 × 2 = 10. Trivial.
+- Must tag + wait for release before installer can fetch. OK — not a hot path.
+- Placeholder substitution (`{{HOME}}`) is the only client-side templating. Everything else (`{{GOOGLE_CLIENT_ID}}`, etc.) stays in the config for the post-install auth step.
+
+### Runtime Node requirement
+
+MCP servers run via `npx`, which requires Node.js on the client. This is a non-negotiable runtime dependency imposed by the MCP ecosystem, not by our installer. Phase 4 installs Node via Homebrew (macOS) / winget (Windows). Design doc's "no Node prerequisites" referred to installer prereqs, not runtime.
+
+---
+
+## 2026-04-17 — Homebrew required on macOS for V1
+
+`install.sh` uses Homebrew as the primary path for Claude Desktop and Node.js installs. Direct-download fallbacks are best-effort only for V1.
+
+**Why:** brew install is the simplest, most reliable silent install on macOS. Direct-zip install of Claude Desktop requires fetching `RELEASES.json`, parsing the latest version, constructing a hashed URL, `ditto -xk`ing, and `xattr -dr com.apple.quarantine`. Brittle on version bumps. Node.js direct pkg requires `sudo installer` which we'd rather avoid.
+
+**Acceptance-test implication:** V1 acceptance on a fresh macOS VM assumes Homebrew is pre-installed, or Ben installs it on-site before running the installer. Post-V1, bundle Homebrew install as a preflight step if self-serve demand appears.

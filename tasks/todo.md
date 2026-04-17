@@ -13,25 +13,27 @@
 
 ## V1 build — installer
 
-- [ ] `installer/install.sh` — macOS entry point with phased flow (preflight → backup → sys toggles → download → install Desktop → install Code → write configs → launch)
-- [ ] `installer/install.ps1` — Windows equivalent, including UAC re-launch for dev mode registry write
-- [ ] `installer/lib/` — shared helpers: detect-os, backup, write-config, bundle-skills
-- [ ] Flag parsing: `--industry <name> --stack <google|microsoft|mixed>`
-- [ ] Manifest resolver: merge primitives + stack + industry add-ons into final `claude_desktop_config.json`
-- [ ] Backup system: timestamped copy + `restore.{sh,ps1}` in backup folder
-- [ ] Logging to `~/.engineai-installer/logs/`
-- [ ] Idempotent re-run behaviour (detect existing installs, skip, re-sync)
-- [ ] README with copy-paste one-liners + screenshots
+- [x] `installer/install.sh` — macOS entry point with 8-phase flow
+- [x] `installer/install.ps1` — Windows equivalent (MSIX-aware, handles winget)
+- [x] Flag parsing: `--industry <name> --stack <google|microsoft>`
+- [x] Manifest resolver moved factory-side (pre-merged bundles — see `docs/decisions.md`)
+- [x] Backup system: timestamped copy + `restore.{sh,ps1}` in backup folder
+- [x] Logging to `~/.engineai-installer/logs/`
+- [x] Idempotent re-run behaviour (detects existing Claude Desktop / Code installs, skips)
+- [x] README with copy-paste one-liners
+- [ ] Screenshots in README (post-V1 acceptance test)
+- [ ] `installer/lib/` refactor — not needed with monolithic scripts; revisit if scripts grow past 700 lines
 
 ## V1 build — templates repo
 
-- [ ] `core/primitives/` — stub MCP configs for Chrome MCP, Desktop Commander, Filesystem, Playwright, Fetch
-- [ ] `stacks/google/`, `stacks/microsoft/` — stub MCP configs for the split Tier 2 tools
-- [ ] `industries/property/manifest.json` — minimal manifest for V1 acceptance test
-- [ ] `industries/property/skills/` — 2-3 stub skills
-- [ ] Placeholder folders for `finance`, `investment`, `property-development`, `small-business`
-- [ ] `claude-code-settings/` — baseline `settings.json` + `permissions.json` (pre-approved safe tools)
-- [ ] GitHub Actions release workflow → zip + tag
+- [x] `core/primitives/mcp.json` — 5 MCPs: desktop-commander, filesystem, fetch, playwright, chrome-devtools
+- [x] `stacks/google/`, `stacks/microsoft/`, `stacks/neutral/` — Tier 2 stubs
+- [x] `industries/property/manifest.json` + `mcp.json` + stub skill
+- [x] `claude-code-settings/` — baseline settings + tight permissions
+- [x] `scripts/build-bundles.py` — factory-side merge + tarball
+- [x] `.github/workflows/release.yml` — tag push → build → attach to release
+- [x] v0.1.0 tagged and released with property-google + property-microsoft tarballs
+- [ ] Placeholder folders for `finance`, `investment`, `property-development`, `small-business` — scaffold later when content is ready
 
 ## V1 acceptance test
 
@@ -61,3 +63,10 @@
 - 2026-04-17 — Dev-mode-flag research logged (known gap on Developer tab — VM verify needed)
 - 2026-04-17 — `engineai-nz/claude-installer` public repo created and pushed
 - 2026-04-17 — `engineai-nz/claude-templates` public repo created with directory scaffold
+- 2026-04-17 — Claude Code CLI install path researched (native installer, no Node dep)
+- 2026-04-17 — Bundle architecture changed: factory-side pre-merge (Option 2 in session notes) — see decisions.md
+- 2026-04-17 — Templates content stubbed out: 5 primitives, 2 stacks + neutral, 1 industry, 1 stub skill, baseline settings
+- 2026-04-17 — `scripts/build-bundles.py` + `.github/workflows/release.yml` live
+- 2026-04-17 — `install.sh` (macOS) + `install.ps1` (Windows) written — 8 phases each
+- 2026-04-17 — claude-templates v0.1.0 released with `property-google.tar.gz` and `property-microsoft.tar.gz` attached
+- 2026-04-17 — Smoke tested end-to-end: download bundle → unpack → sed-substitute → 14 MCPs merged correctly

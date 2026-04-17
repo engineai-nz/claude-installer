@@ -28,3 +28,24 @@ For multi-line scripts, use a heredoc (`bash << 'OUTER' ... OUTER`) — inline `
 **Working theory:** the tab appears automatically when `claude_desktop_config.json` exists with valid `mcpServers`. Unconfirmed on a clean VM.
 
 **Action before first client ship:** test on a fresh Windows 11 VM and fresh macOS VM. If the tab does not appear, inspect `Local Storage/leveldb/` under the config dir for an Electron-stored flag.
+
+---
+
+## 2026-04-17 — PowerShell can't read UNC paths from Windows bash shim
+
+**Gotcha:** Running `powershell.exe -Command "..."` from Git Bash with a UNC path (`\\wsl.localhost\...`) fails. PowerShell strips one leading backslash somewhere in the shell-to-shell handoff and reports "Cannot find path".
+
+**Fix:** Don't syntax-check `.ps1` files via this path. Options:
+- Run `pwsh` from inside WSL if installed
+- Copy the file to a Windows-native path first and parse there
+- Skip parse checks and rely on VM-based acceptance testing
+
+For V1 I skipped the static parse check and marked Windows as "test on VM". If we hit frequent PS1 bugs, install pwsh in WSL or set up a Windows CI runner.
+
+---
+
+## 2026-04-17 — Build artifacts don't belong in source repos
+
+**Gotcha:** First `python3 scripts/build-bundles.py` run generated `dist/bundles/` with 4 unpacked dirs + 2 tarballs. Without a `.gitignore` entry, these would have been committed as source.
+
+**Fix:** Added `dist/` to `.gitignore` before first commit to claude-templates. Build output belongs in GitHub releases, not in the repo tree.
