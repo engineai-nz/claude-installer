@@ -346,7 +346,10 @@ function Invoke-PhaseWriteConfigs {
     # Literal .Replace() (not regex -replace), and double the backslashes so the
     # Windows path embeds as a valid JSON string.
     $content = $content.Replace('{{HOME}}', $env:USERPROFILE.Replace('\', '\\'))
-    Set-Content -Path $dst -Value $content -Encoding utf8
+    # .NET UTF8Encoding($false) writes without a BOM. PowerShell 5's
+    # Set-Content -Encoding utf8 adds one, which Claude Desktop's JSON
+    # parser rejects.
+    [System.IO.File]::WriteAllText($dst, $content, (New-Object System.Text.UTF8Encoding($false)))
   }
   Ok "Wrote $dst"
 
