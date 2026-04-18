@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Engine AI Claude Installer — Windows
+  Engine AI Claude Installer - Windows
 
 .DESCRIPTION
   Installs Claude Desktop + Claude Code CLI, configures MCP servers and
@@ -93,8 +93,8 @@ Write-Host "Log: $LogFile" -ForegroundColor DarkGray
 Write-Host ""
 
 # ---------- Phase 1: Preflight ----------
-function Invoke-Phase-Preflight {
-  Step "Phase 1/8 — Preflight checks"
+function Invoke-PhasePreflight {
+  Step "Phase 1/8 - Preflight checks"
 
   $osVer = [System.Environment]::OSVersion.Version
   Info ("Windows {0}.{1} build {2}" -f $osVer.Major, $osVer.Minor, $osVer.Build)
@@ -139,8 +139,8 @@ function Invoke-Phase-Preflight {
 }
 
 # ---------- Phase 2: Backup ----------
-function Invoke-Phase-Backup {
-  Step "Phase 2/8 — Backup existing configuration"
+function Invoke-PhaseBackup {
+  Step "Phase 2/8 - Backup existing configuration"
   $backupDir = Join-Path $BackupRoot $Ts
   Invoke-Step { New-Item -ItemType Directory -Force -Path $backupDir | Out-Null } "Create backup dir $backupDir"
 
@@ -210,8 +210,8 @@ Write-Host "Restored from `$BackupDir"
 }
 
 # ---------- Phase 3: Download bundle ----------
-function Invoke-Phase-Download {
-  Step "Phase 3/8 — Download templates bundle"
+function Invoke-PhaseDownload {
+  Step "Phase 3/8 - Download templates bundle"
   $tarball = "$Industry-$Stack.tar.gz"
   $downloadUrl = if ($BundleVersion -eq "latest") {
     "https://github.com/$TemplatesRepo/releases/latest/download/$tarball"
@@ -239,8 +239,8 @@ function Invoke-Phase-Download {
 }
 
 # ---------- Phase 4: Install Node.js ----------
-function Invoke-Phase-InstallNode {
-  Step "Phase 4/8 — Install Node.js runtime"
+function Invoke-PhaseInstallNode {
+  Step "Phase 4/8 - Install Node.js runtime"
   if (Get-Command node -ErrorAction SilentlyContinue) {
     $nodeVer = & node --version
     Info "Node.js already present: $nodeVer"
@@ -268,8 +268,8 @@ function Invoke-Phase-InstallNode {
 }
 
 # ---------- Phase 5: Install Claude Desktop ----------
-function Invoke-Phase-InstallClaudeDesktop {
-  Step "Phase 5/8 — Install Claude Desktop"
+function Invoke-PhaseInstallClaudeDesktop {
+  Step "Phase 5/8 - Install Claude Desktop"
   $installed = (Test-Path (Join-Path $env:LOCALAPPDATA "AnthropicClaude")) -or $IsMsixInstall
   if ($installed) {
     Ok "Claude Desktop already installed"
@@ -294,8 +294,8 @@ function Invoke-Phase-InstallClaudeDesktop {
 }
 
 # ---------- Phase 6: Install Claude Code CLI ----------
-function Invoke-Phase-InstallClaudeCode {
-  Step "Phase 6/8 — Install Claude Code CLI"
+function Invoke-PhaseInstallClaudeCode {
+  Step "Phase 6/8 - Install Claude Code CLI"
   if (Get-Command claude -ErrorAction SilentlyContinue) {
     Ok "Claude Code already installed"
     return
@@ -325,8 +325,8 @@ function Invoke-Phase-InstallClaudeCode {
 }
 
 # ---------- Phase 7: Write configs + skills ----------
-function Invoke-Phase-WriteConfigs {
-  Step "Phase 7/8 — Write configs and skills"
+function Invoke-PhaseWriteConfigs {
+  Step "Phase 7/8 - Write configs and skills"
   if (-not $BundlePath) { Fatal "Bundle not downloaded - aborting" }
 
   $configDir = $ActualClaudeConfigDir
@@ -379,8 +379,8 @@ function Invoke-Phase-WriteConfigs {
 }
 
 # ---------- Phase 8: Finish ----------
-function Invoke-Phase-Finish {
-  Step "Phase 8/8 — Launch and next steps"
+function Invoke-PhaseFinish {
+  Step "Phase 8/8 - Launch and next steps"
 
   $claudeExe = Join-Path $env:LOCALAPPDATA "AnthropicClaude\Claude.exe"
   if (-not (Test-Path $claudeExe)) {
@@ -409,14 +409,14 @@ function Invoke-Phase-Finish {
 
 # ---------- Main ----------
 try {
-  Invoke-Phase-Preflight
-  Invoke-Phase-Backup
-  Invoke-Phase-Download
-  Invoke-Phase-InstallNode
-  Invoke-Phase-InstallClaudeDesktop
-  Invoke-Phase-InstallClaudeCode
-  Invoke-Phase-WriteConfigs
-  Invoke-Phase-Finish
+  Invoke-PhasePreflight
+  Invoke-PhaseBackup
+  Invoke-PhaseDownload
+  Invoke-PhaseInstallNode
+  Invoke-PhaseInstallClaudeDesktop
+  Invoke-PhaseInstallClaudeCode
+  Invoke-PhaseWriteConfigs
+  Invoke-PhaseFinish
 } catch {
   ErrLog "Fatal: $_"
   Write-Host ""
