@@ -343,7 +343,9 @@ function Invoke-PhaseWriteConfigs {
   $dst = Join-Path $configDir "claude_desktop_config.json"
   if (-not $DryRun) {
     $content = Get-Content $src -Raw
-    $content = $content -replace '\{\{HOME\}\}', ($env:USERPROFILE -replace '\\', '\\')
+    # Literal .Replace() (not regex -replace), and double the backslashes so the
+    # Windows path embeds as a valid JSON string.
+    $content = $content.Replace('{{HOME}}', $env:USERPROFILE.Replace('\', '\\'))
     Set-Content -Path $dst -Value $content -Encoding utf8
   }
   Ok "Wrote $dst"
