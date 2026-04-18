@@ -8,20 +8,35 @@ Built by [Engine AI](https://engineai.co.nz) for non-technical clients. No dev t
 
 ## Usage
 
+Defaults: `--industry property --stack microsoft`. One line, paste and go.
+
 ### macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.sh | bash -s -- --industry property --stack microsoft
+curl -fsSL https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-iwr https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.ps1 -OutFile $env:TEMP\install.ps1
-& $env:TEMP\install.ps1 -Industry property -Stack microsoft
+irm https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.ps1 | iex
 ```
 
-Both accept `--industry` / `-Industry` and `--stack` / `-Stack`. V1 supports `property` and `microsoft | google`.
+### With custom args
+
+Override industry or stack when the defaults don't fit. V1 supports `property` and `microsoft | google`.
+
+macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.sh | bash -s -- --industry property --stack google
+```
+
+Windows:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/install.ps1))) -Industry property -Stack google
+```
 
 ---
 
