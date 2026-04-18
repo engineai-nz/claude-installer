@@ -28,11 +28,11 @@ param(
   [string] $BundleVersion = "latest",
 
   [switch] $DryRun,
-  [switch] $Debug
+  [switch] $DebugMode
 )
 
 $ErrorActionPreference = "Stop"
-if ($Debug) { $VerbosePreference = "Continue" }
+if ($DebugMode) { $VerbosePreference = "Continue" }
 
 # ---------- Constants ----------
 $InstallerVersion = "0.1.0"
