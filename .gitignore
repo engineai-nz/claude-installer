@@ -5,6 +5,7 @@
 *.log
 tmp/
 .engineai-installer/
+.last_session
 
 # OS junk
 .DS_Store
