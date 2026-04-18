@@ -84,6 +84,21 @@ function Invoke-Step {
   & $Block
 }
 
+function Find-ClaudeDesktopExe {
+  # Anthropic's installer drops a versioned subfolder like
+  # AnthropicClaude\app-1.3109.0\claude.exe. Search for the newest one.
+  $root = Join-Path $env:LOCALAPPDATA "AnthropicClaude"
+  if (Test-Path $root) {
+    $exe = Get-ChildItem $root -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($exe) { return $exe.FullName }
+  }
+  # Fall back: Start menu shortcut or PATH
+  $shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Claude.lnk"
+  if (Test-Path $shortcut) { return $shortcut }
+  return $null
+}
+
 # ---------- Banner ----------
 Write-Host ""
 Write-Host "Engine AI Claude Installer" -ForegroundColor Yellow -NoNewline
@@ -286,8 +301,9 @@ function Invoke-PhaseInstallClaudeDesktop {
     return
   }
 
-  if (Test-Path (Join-Path $env:LOCALAPPDATA "AnthropicClaude")) {
-    Ok "Claude Desktop installed"
+  $exe = Find-ClaudeDesktopExe
+  if ($exe) {
+    Ok "Claude Desktop installed: $exe"
   } else {
     Warn "Claude Desktop not found after install"
   }
@@ -332,10 +348,22 @@ function Invoke-PhaseWriteConfigs {
   $configDir = $ActualClaudeConfigDir
   Invoke-Step { New-Item -ItemType Directory -Force -Path $configDir, (Join-Path $ClaudeCodeDir "skills") | Out-Null } "Ensure config dirs"
 
-  # Stop Claude Desktop so it re-reads the config on next launch
-  $claudeProc = Get-Process -Name "Claude" -ErrorAction SilentlyContinue
+  # Fully stop Claude Desktop before writing. Electron spawns several claude.exe
+  # helpers; if any survive the kill they will rewrite the config on shutdown,
+  # wiping our mcpServers block and leaving "Could not load app settings".
+  $claudeProc = Get-Process | Where-Object { $_.ProcessName -like "*laude*" }
   if ($claudeProc) {
-    Invoke-Step { Stop-Process -Name "Claude" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 } "Stop Claude Desktop"
+    Invoke-Step {
+      $claudeProc | Stop-Process -Force -ErrorAction SilentlyContinue
+      # Poll until every claude.exe is gone, up to 10s.
+      $deadline = (Get-Date).AddSeconds(10)
+      while ((Get-Process | Where-Object { $_.ProcessName -like "*laude*" }) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 300
+      }
+      if (Get-Process | Where-Object { $_.ProcessName -like "*laude*" }) {
+        Warn "Some claude.exe processes did not exit within 10s - config may be overwritten"
+      }
+    } "Stop Claude Desktop"
   }
 
   # claude_desktop_config.json with placeholder substitution
@@ -387,15 +415,12 @@ function Invoke-PhaseWriteConfigs {
 function Invoke-PhaseFinish {
   Step "Phase 8/8 - Launch and next steps"
 
-  $claudeExe = Join-Path $env:LOCALAPPDATA "AnthropicClaude\Claude.exe"
-  if (-not (Test-Path $claudeExe)) {
-    # Try MSIX launch
-    $claudeExe = (Get-Command Claude -ErrorAction SilentlyContinue).Source
-  }
-
+  $claudeExe = Find-ClaudeDesktopExe
   if (-not $DryRun -and $claudeExe -and (Test-Path $claudeExe)) {
     Start-Process $claudeExe
     Ok "Launched Claude Desktop"
+  } elseif (-not $DryRun) {
+    Warn "Claude Desktop executable not found - launch it from the Start menu"
   }
 
   Write-Host ""

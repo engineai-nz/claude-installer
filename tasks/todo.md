@@ -37,7 +37,8 @@
 
 ## V1 acceptance test
 
-- [ ] Fresh Windows 11 VM — paste one-liner, works end-to-end in under 5 minutes
+- [x] Windows 11 real-machine test (Ben's laptop, build 26200) — surfaced 5 bugs, all fixed, all 14 MCPs load, no banner
+- [ ] Fresh Windows 11 VM — paste one-liner, works end-to-end in under 5 minutes on a truly clean install
 - [ ] Fresh macOS VM (Intel + ARM if practical) — same
 - [ ] Run on Tom's QCC machine as real-world smoke test
 
@@ -70,3 +71,5 @@
 - 2026-04-17 — `install.sh` (macOS) + `install.ps1` (Windows) written — 8 phases each
 - 2026-04-17 — claude-templates v0.1.0 released with `property-google.tar.gz` and `property-microsoft.tar.gz` attached
 - 2026-04-17 — Smoke tested end-to-end: download bundle → unpack → sed-substitute → 14 MCPs merged correctly
+- 2026-04-18 — Windows 11 real-machine test on Ben's laptop: surfaced and fixed 5 bugs (Debug collision, multi-hyphen fn names, em-dash console mangling, JSON backslash escaping, UTF-8 BOM). All 14 MCPs load in Claude Desktop, banner clear.
+- 2026-04-18 — Hardened Phase 7 to poll until Claude Desktop fully exits (Electron helpers); added Find-ClaudeDesktopExe for versioned install-path discovery.
