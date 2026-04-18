@@ -52,6 +52,9 @@
 
 - [ ] Post-install auth wizard (walks user through top 5 OAuth/API-key setups)
 - [ ] `install.engineai.co.nz` Vercel redirect for cleaner one-liner URL
+  - New Vercel project with `vercel.json` redirects: `/` and `/win` → raw install.ps1, `/mac` → raw install.sh
+  - Add custom domain in Vercel, CNAME `install` → Vercel target at registrar
+  - Client-facing commands become: `irm install.engineai.co.nz | iex` (Win) / `curl -fsSL install.engineai.co.nz/mac | bash` (Mac)
 - [ ] `.bat` wrapper for double-click install on Windows (self-serve path)
 - [ ] Skill upload to Claude Desktop Settings / Projects when Anthropic ships an API
 - [ ] Remote/unattended install mode
