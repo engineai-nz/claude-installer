@@ -372,8 +372,82 @@ function Test-ClaudeCode {
   $findings
 }
 
+function Test-McpServerEntry {
+  # Pure check of one MCP server config entry. No machine state beyond
+  # command resolution.
+  param(
+    [Parameter(Mandatory)] [string] $Name,
+    [Parameter(Mandatory)] [object] $Server,
+    [Parameter(Mandatory)] [bool] $NpxAvailable
+  )
+  $problems = @()
+
+  $raw = $Server | ConvertTo-Json -Depth 5 -Compress
+  if ($raw -match '\{\{[A-Za-z0-9_]+\}\}') {
+    $problems += 'unfilled placeholder tokens'
+  }
+
+  $cmd = $Server.command
+  if (-not $cmd) {
+    $problems += 'no command'
+  } elseif ($cmd -match '^[A-Za-z]:\\') {
+    if (-not (Test-Path $cmd)) { $problems += "command not found: $cmd" }
+  } elseif ($cmd -in @('npx', 'npx.cmd')) {
+    if (-not $NpxAvailable) { $problems += 'npx not available (Node missing)' }
+  } else {
+    if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) { $problems += "command not on PATH: $cmd" }
+  }
+
+  if ($problems.Count -eq 0) {
+    New-Finding -Id "mcp.server.$Name" -Category 'mcp-runtime' -Status 'ok' -Evidence 'Resolvable, no placeholders'
+  } else {
+    New-Finding -Id "mcp.server.$Name" -Category 'mcp-runtime' -Status 'gap' `
+      -Evidence ($problems -join '; ') `
+      -Recommendation "Server '$Name' is configured but cannot work as-is"
+  }
+}
+
+function Test-McpRuntime {
+  $c = 'mcp-runtime'
+  $findings = @()
+
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  $npx = Get-Command npx -ErrorAction SilentlyContinue
+  $npxAvailable = [bool]$npx
+  if ($node) {
+    $ver = try { (& node --version) } catch { 'version unknown' }
+    $findings += New-Finding -Id 'mcp.node' -Category $c -Status 'ok' -Evidence "Node $ver"
+  } else {
+    $findings += New-Finding -Id 'mcp.node' -Category $c -Status 'missing' `
+      -Evidence 'Node.js not installed' `
+      -Recommendation 'MCP servers cannot run without Node.js'
+  }
+
+  $ctx = Get-ClaudeDesktopContext
+  $cfg = if ($ctx.configPath) { Get-JsonSafe -Path $ctx.configPath } else { $null }
+  $fsOk = $false
+  if ($cfg -and $cfg.valid -and $cfg.data.mcpServers) {
+    foreach ($prop in $cfg.data.mcpServers.PSObject.Properties) {
+      $f = Test-McpServerEntry -Name $prop.Name -Server $prop.Value -NpxAvailable $npxAvailable
+      $findings += $f
+      if ($prop.Name -match 'filesystem' -and $f.status -eq 'ok') { $fsOk = $true }
+    }
+  }
+
+  if ($fsOk) {
+    $findings += New-Finding -Id 'mcp.filesystem' -Category $c -Status 'ok' `
+      -Evidence 'Working filesystem MCP configured'
+  } else {
+    $findings += New-Finding -Id 'mcp.filesystem' -Category $c -Status 'gap' `
+      -Evidence 'No working filesystem MCP' `
+      -Recommendation 'Claude cannot reach local files; connect the filesystem MCP to where the files live'
+  }
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode')
+$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime')
 
 function Invoke-Assessment {
   Write-Host ''

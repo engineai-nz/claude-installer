@@ -125,3 +125,38 @@ Describe 'Test-ClaudeCode' {
     ($ids | Group-Object | Where-Object Count -gt 1) | Should Be $null
   }
 }
+
+Describe 'Test-McpServerEntry' {
+  It 'flags unfilled placeholders as gap' {
+    $server = ('{"command":"npx","args":["-y","some-mcp"],"env":{"KEY":"{{API_KEY}}"}}' | ConvertFrom-Json)
+    $f = Test-McpServerEntry -Name 'hubspot' -Server $server -NpxAvailable $true
+    $f.id | Should Be 'mcp.server.hubspot'
+    $f.status | Should Be 'gap'
+    $f.evidence | Should Match 'placeholder'
+  }
+  It 'passes a clean npx server when npx is available' {
+    $server = ('{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:\\Users"]}' | ConvertFrom-Json)
+    $f = Test-McpServerEntry -Name 'filesystem' -Server $server -NpxAvailable $true
+    $f.status | Should Be 'ok'
+  }
+  It 'flags npx servers when npx is missing' {
+    $server = ('{"command":"npx","args":["-y","x"]}' | ConvertFrom-Json)
+    $f = Test-McpServerEntry -Name 'x' -Server $server -NpxAvailable $false
+    $f.status | Should Be 'gap'
+  }
+  It 'flags a non-existent absolute command path' {
+    $server = ('{"command":"C:\\nope\\missing.exe","args":[]}' | ConvertFrom-Json)
+    $f = Test-McpServerEntry -Name 'y' -Server $server -NpxAvailable $true
+    $f.status | Should Be 'gap'
+  }
+}
+
+Describe 'Test-McpRuntime' {
+  $findings = Test-McpRuntime
+  It 'always reports node state' {
+    ($findings | Where-Object { $_.id -eq 'mcp.node' }) | Should Not Be $null
+  }
+  It 'always reports filesystem MCP state' {
+    ($findings | Where-Object { $_.id -eq 'mcp.filesystem' }) | Should Not Be $null
+  }
+}
