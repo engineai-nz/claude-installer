@@ -446,8 +446,69 @@ function Test-McpRuntime {
   $findings
 }
 
+function Test-DataLandscape {
+  $c = 'data-landscape'
+  $findings = @()
+
+  # OneDrive: personal and business env vars.
+  $odPaths = @()
+  foreach ($v in @($env:OneDrive, $env:OneDriveCommercial, $env:OneDriveConsumer)) {
+    if ($v -and (Test-Path $v) -and ($odPaths -notcontains $v)) { $odPaths += $v }
+  }
+  if ($odPaths.Count -gt 0) {
+    $findings += New-Finding -Id 'data.oneDrive' -Category $c -Status 'ok' `
+      -Evidence "OneDrive: $($odPaths -join '; ')" -Data @{ paths = $odPaths }
+  } else {
+    $findings += New-Finding -Id 'data.oneDrive' -Category $c -Status 'info' `
+      -Evidence 'No OneDrive detected' -Data @{ paths = @() }
+  }
+
+  # Known Folder Move: are Desktop/Documents redirected into OneDrive?
+  $docs = [Environment]::GetFolderPath('MyDocuments')
+  $desktop = [Environment]::GetFolderPath('Desktop')
+  $kfm = $false
+  foreach ($od in $odPaths) {
+    if ($docs -like "$od*" -or $desktop -like "$od*") { $kfm = $true }
+  }
+  $findings += New-Finding -Id 'data.kfm' -Category $c -Status 'info' `
+    -Evidence $(if ($kfm) { "Desktop/Documents redirected into OneDrive (Documents: $docs)" } else { "Desktop/Documents local (Documents: $docs)" }) `
+    -Data @{ redirected = $kfm; documents = $docs; desktop = $desktop }
+
+  # Google Drive for desktop: DriveFS data dir + mounted volume.
+  $gdPaths = @()
+  if (Test-Path (Join-Path $env:LOCALAPPDATA 'Google\DriveFS')) {
+    $vols = Get-CimInstance Win32_LogicalDisk -ErrorAction SilentlyContinue |
+      Where-Object { $_.VolumeName -eq 'Google Drive' }
+    foreach ($v in $vols) { $gdPaths += $v.DeviceID }
+    if ($gdPaths.Count -eq 0) { $gdPaths += 'installed (mount not found)' }
+    $findings += New-Finding -Id 'data.googleDrive' -Category $c -Status 'ok' `
+      -Evidence "Google Drive for desktop: $($gdPaths -join '; ')" -Data @{ paths = $gdPaths }
+  } else {
+    $findings += New-Finding -Id 'data.googleDrive' -Category $c -Status 'info' `
+      -Evidence 'No Google Drive for desktop' -Data @{ paths = @() }
+  }
+
+  # Dropbox.
+  $dropbox = Join-Path $env:USERPROFILE 'Dropbox'
+  $findings += New-Finding -Id 'data.dropbox' -Category $c -Status 'info' `
+    -Evidence $(if (Test-Path $dropbox) { "Dropbox at $dropbox" } else { 'No Dropbox' })
+
+  # Mapped network drives.
+  $mapped = @(Get-CimInstance Win32_MappedLogicalDisk -ErrorAction SilentlyContinue)
+  if ($mapped.Count -gt 0) {
+    $desc = ($mapped | ForEach-Object { "$($_.DeviceID) -> $($_.ProviderName)" }) -join '; '
+    $findings += New-Finding -Id 'data.mappedDrives' -Category $c -Status 'ok' `
+      -Evidence "Mapped drives: $desc" `
+      -Data @{ drives = @($mapped | ForEach-Object { @{ letter = $_.DeviceID; unc = $_.ProviderName } }) }
+  } else {
+    $findings += New-Finding -Id 'data.mappedDrives' -Category $c -Status 'info' -Evidence 'No mapped network drives'
+  }
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime')
+$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime', 'Test-DataLandscape')
 
 function Invoke-Assessment {
   Write-Host ''

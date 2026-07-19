@@ -160,3 +160,15 @@ Describe 'Test-McpRuntime' {
     ($findings | Where-Object { $_.id -eq 'mcp.filesystem' }) | Should Not Be $null
   }
 }
+
+Describe 'Test-DataLandscape' {
+  $findings = Test-DataLandscape
+  It 'reports all five landscape ids' {
+    foreach ($id in @('data.oneDrive','data.kfm','data.googleDrive','data.dropbox','data.mappedDrives')) {
+      ($findings | Where-Object { $_.id -eq $id }) | Should Not Be $null
+    }
+  }
+  It 'uses only valid statuses' {
+    ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
+  }
+}
