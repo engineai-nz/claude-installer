@@ -477,7 +477,7 @@ function Test-DataLandscape {
   # Google Drive for desktop: DriveFS data dir + mounted volume.
   $gdPaths = @()
   if (Test-Path (Join-Path $env:LOCALAPPDATA 'Google\DriveFS')) {
-    $vols = Get-CimInstance Win32_LogicalDisk -ErrorAction SilentlyContinue |
+    $vols = Get-CimInstance Win32_LogicalDisk -OperationTimeoutSec 5 -ErrorAction SilentlyContinue |
       Where-Object { $_.VolumeName -eq 'Google Drive' }
     foreach ($v in $vols) { $gdPaths += $v.DeviceID }
     if ($gdPaths.Count -eq 0) { $gdPaths += 'installed (mount not found)' }
@@ -493,8 +493,16 @@ function Test-DataLandscape {
   $findings += New-Finding -Id 'data.dropbox' -Category $c -Status 'info' `
     -Evidence $(if (Test-Path $dropbox) { "Dropbox at $dropbox" } else { 'No Dropbox' })
 
-  # Mapped network drives.
-  $mapped = @(Get-CimInstance Win32_MappedLogicalDisk -ErrorAction SilentlyContinue)
+  # Mapped network drives: read persistent mappings from the registry
+  # (HKCU:\Network) instead of Win32_MappedLogicalDisk, which blocks on
+  # SMB provider resolution per drive and can add 30s+ with dead mappings.
+  $mapped = @()
+  try {
+    $mapped = @(Get-ChildItem 'HKCU:\Network' -ErrorAction Stop | ForEach-Object {
+      $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+      [pscustomobject]@{ DeviceID = "$($_.PSChildName):"; ProviderName = $p.RemotePath }
+    })
+  } catch { }
   if ($mapped.Count -gt 0) {
     $desc = ($mapped | ForEach-Object { "$($_.DeviceID) -> $($_.ProviderName)" }) -join '; '
     $findings += New-Finding -Id 'data.mappedDrives' -Category $c -Status 'ok' `
