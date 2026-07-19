@@ -507,8 +507,100 @@ function Test-DataLandscape {
   $findings
 }
 
+function Get-InstalledPrograms {
+  if ($script:InstalledPrograms) { return $script:InstalledPrograms }
+  $paths = @(
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+    'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+  )
+  $script:InstalledPrograms = @(
+    Get-ItemProperty $paths -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName }
+  )
+  return $script:InstalledPrograms
+}
+
+function Test-WorkStack {
+  $c = 'work-stack'
+  $findings = @()
+  $progs = Get-InstalledPrograms
+
+  $msSignals = @()
+  if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun') { $msSignals += 'Microsoft 365 (Click-to-Run)' }
+  if ($progs | Where-Object { $_.DisplayName -match 'Microsoft 365|Microsoft Office' }) { $msSignals += 'Office listed in programs' }
+  if ((Get-AppxPackage -Name 'MSTeams' -ErrorAction SilentlyContinue) -or
+      ($progs | Where-Object { $_.DisplayName -match 'Microsoft Teams' })) { $msSignals += 'Teams' }
+  $msSignals = @($msSignals | Select-Object -Unique)
+
+  $gSignals = @()
+  if (Test-Path (Join-Path $env:LOCALAPPDATA 'Google\DriveFS')) { $gSignals += 'Google Drive for desktop' }
+  try {
+    $prog = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' -ErrorAction Stop).ProgId
+    if ($prog -like 'Chrome*') { $gSignals += 'Chrome default browser' }
+  } catch { }
+
+  $findings += New-Finding -Id 'stack.microsoft' -Category $c -Status 'info' `
+    -Evidence $(if ($msSignals) { $msSignals -join ', ' } else { 'No Microsoft stack signals' })
+  $findings += New-Finding -Id 'stack.google' -Category $c -Status 'info' `
+    -Evidence $(if ($gSignals) { $gSignals -join ', ' } else { 'No Google stack signals' })
+
+  $stack = if ($msSignals.Count -gt 0 -and $gSignals.Count -gt 0) { 'mixed' }
+           elseif ($msSignals.Count -gt 0) { 'microsoft' }
+           elseif ($gSignals.Count -gt 0) { 'google' }
+           else { 'unknown' }
+  $findings += New-Finding -Id 'stack.verdict' -Category $c -Status 'info' `
+    -Evidence "Work stack: $stack" -Data @{ stack = $stack }
+
+  $findings
+}
+
+function Test-OpportunityScan {
+  $c = 'opportunity-scan'
+  $findings = @()
+  $progs = Get-InstalledPrograms
+  $processes = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $_.ProcessName })
+
+  # Known-apps table. Extend freely: one row per app.
+  # match = regex against DisplayName; proc = regex against process names.
+  $knownApps = @(
+    @{ key = 'slack';      name = 'Slack';            match = '^Slack';                 proc = '^slack$';     mcp = $true }
+    @{ key = 'teams';      name = 'Microsoft Teams';  match = 'Microsoft Teams';        proc = '^ms-teams$';  mcp = $true }
+    @{ key = 'zoom';       name = 'Zoom';             match = '^Zoom';                  proc = '^Zoom$';      mcp = $false }
+    @{ key = 'notion';     name = 'Notion';           match = '^Notion';                proc = '^Notion$';    mcp = $true }
+    @{ key = 'xero';       name = 'Xero';             match = 'Xero';                   proc = 'Xero';        mcp = $true }
+    @{ key = 'myob';       name = 'MYOB';             match = 'MYOB';                   proc = 'MYOB';        mcp = $false }
+    @{ key = 'quickbooks'; name = 'QuickBooks';       match = 'QuickBooks';             proc = 'qb';          mcp = $false }
+    @{ key = 'dropbox';    name = 'Dropbox';          match = '^Dropbox';               proc = '^Dropbox$';   mcp = $true }
+    @{ key = 'chatgpt';    name = 'ChatGPT Desktop';  match = '^ChatGPT';               proc = '^ChatGPT$';   mcp = $false }
+    @{ key = 'copilot';    name = 'GitHub Copilot';   match = 'GitHub Copilot';         proc = $null;         mcp = $false }
+    @{ key = 'cursor';     name = 'Cursor';           match = '^Cursor';                proc = '^Cursor$';    mcp = $false }
+  )
+
+  $detected = @()
+  $mcpReady = @()
+  foreach ($app in $knownApps) {
+    $hit = $false
+    if ($progs | Where-Object { $_.DisplayName -match $app.match }) { $hit = $true }
+    if (-not $hit -and $app.proc -and ($processes | Where-Object { $_ -match $app.proc })) { $hit = $true }
+    if ($hit) {
+      $detected += $app.name
+      if ($app.mcp) { $mcpReady += $app.name }
+      $mcpNote = if ($app.mcp) { 'MCP connector available' } else { 'no MCP connector yet' }
+      $findings += New-Finding -Id "apps.$($app.key)" -Category $c -Status 'info' `
+        -Evidence "$($app.name) detected ($mcpNote)" -Data @{ mcpAvailable = $app.mcp }
+    }
+  }
+
+  $findings += New-Finding -Id 'apps.summary' -Category $c -Status 'info' `
+    -Evidence "$($detected.Count) known business apps detected, $($mcpReady.Count) connectable to Claude" `
+    -Recommendation $(if ($mcpReady.Count -gt 0) { "Connect Claude to: $($mcpReady -join ', ')" } else { $null }) `
+    -Data @{ detected = @($detected); mcpReady = @($mcpReady) }
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime', 'Test-DataLandscape')
+$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime', 'Test-DataLandscape', 'Test-WorkStack', 'Test-OpportunityScan')
 
 function Invoke-Assessment {
   Write-Host ''

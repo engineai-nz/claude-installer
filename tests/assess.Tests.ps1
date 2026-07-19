@@ -112,6 +112,36 @@ Describe 'Test-ClaudeDesktop' {
   }
 }
 
+Describe 'Get-InstalledPrograms' {
+  It 'returns entries with display names' {
+    $progs = Get-InstalledPrograms
+    @($progs).Count | Should BeGreaterThan 5
+    ($progs | Select-Object -First 1).DisplayName | Should Not Be $null
+  }
+}
+
+Describe 'Test-WorkStack' {
+  $findings = Test-WorkStack
+  It 'produces a verdict with a valid stack value' {
+    $v = $findings | Where-Object { $_.id -eq 'stack.verdict' }
+    $v | Should Not Be $null
+    $v.data.stack | Should Match '^(microsoft|google|mixed|unknown)$'
+  }
+}
+
+Describe 'Test-OpportunityScan' {
+  $findings = Test-OpportunityScan
+  It 'always produces a summary' {
+    $s = $findings | Where-Object { $_.id -eq 'apps.summary' }
+    $s | Should Not Be $null
+    $s.data.detected -is [array] | Should Be $true
+  }
+  It 'marks every detected app with an mcpAvailable flag' {
+    $apps = $findings | Where-Object { $_.id -like 'apps.*' -and $_.id -ne 'apps.summary' }
+    foreach ($a in $apps) { $a.data.ContainsKey('mcpAvailable') | Should Be $true }
+  }
+}
+
 Describe 'Test-ClaudeCode' {
   $findings = Test-ClaudeCode
   It 'always reports installed state' {
