@@ -8,6 +8,21 @@ Built by [Engine AI](https://engineai.co.nz) for non-technical clients. No dev t
 
 ## Usage
 
+### Step 1: Assess (read-only health check)
+
+Run this first on any machine. It changes nothing and takes about 30 seconds:
+
+```powershell
+irm https://raw.githubusercontent.com/engineai-nz/claude-installer/main/installer/assess.ps1 | iex
+```
+
+It prints a scored summary (Claude maturity level plus install readiness) and
+writes a JSON report to `~\.engineai-installer\assess\`.
+
+Customer prerequisites: see [docs/prerequisites.md](docs/prerequisites.md).
+
+### Step 2: Install
+
 Defaults: `--industry property --stack microsoft`. One line, paste and go.
 
 ### macOS

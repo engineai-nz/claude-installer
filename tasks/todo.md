@@ -1,6 +1,18 @@
 # Todo — Claude Installer
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-07-19
+
+---
+
+## assess.ps1 (health check) — V1 built
+
+Built on branch `assess-v1`. Read-only machine assessment: 7 check categories, maturity + readiness rollups, console + JSON output. 42 Pester tests passing. See `docs/prerequisites.md` and the design doc.
+
+- [x] V1 built and verified on Ben's laptop (10s scan, Level 1, all categories, JSON written, no config writes)
+- [ ] Fresh Windows 11 VM test — must hit Level 0 with zero uncaught exceptions on a truly clean install
+- [ ] Old/messy real-machine test (Tom's QCC box) — surface edge cases on an established, cluttered machine
+- [ ] Merge `assess-v1` to `main` and push
+- [ ] macOS `assess.sh` equivalent (post-V1)
 
 ---
 

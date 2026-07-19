@@ -1,6 +1,6 @@
 # Lessons — Claude Installer
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-07-19
 
 Corrections, gotchas, and things learned the hard way. Append-only.
 
@@ -99,3 +99,29 @@ Also: `Start-Process claude.exe` on an already-running Claude Desktop just focus
 **Gotcha:** `Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression` inside Phase 6 hung for >10 minutes on one VM. User pressed Enter and it completed with "Claude Code successfully installed". Looks like the script emits an interactive prompt that isn't visible when piped through `Invoke-Expression`.
 
 **Action (deferred):** not fixing in V1 — the on-site operator can nudge it with Enter. If self-serve path lands later, need to either download and inspect the install script or invoke with explicit non-interactive flags.
+
+---
+
+## 2026-07-19 — `Win32_MappedLogicalDisk` blocks on SMB provider resolution (assess.ps1)
+
+**Gotcha:** Enumerating mapped drives via `Win32_MappedLogicalDisk` (or `Win32_LogicalDisk` for network drives) makes WMI resolve each mapping's SMB provider one at a time. On Ben's laptop that was ~41s for 6 mapped drives — and it gets worse with dead/unreachable mappings, which each hang until timeout. This dominated a scan that should take ~10s.
+
+**Fix:** Read persistent mappings from the `HKCU:\Network` registry hive instead (each subkey is a drive letter with a `RemotePath` value). Registry read is instant. Also capped the Google Drive `Win32_LogicalDisk` detection query at `-OperationTimeoutSec 5`. Scan dropped 46.9s → 10.3s.
+
+**Trade:** Session-only mappings (created without `-Persistent`, absent from the registry) are invisible to the scan. Acceptable — client machines almost always use persistent mappings, and a read-only health check does not need exhaustive drive coverage.
+
+---
+
+## 2026-07-19 — PS 5.1 typed `[string]` param coerces `$null` to empty string
+
+**Gotcha:** In PowerShell 5.1 a typed parameter default of `[string] $x = $null` does not keep `$null` — it coerces to the empty string `''`. Code that later tested `if ($null -eq $x)` never fired. Hit in `New-Finding -Recommendation`, where a genuinely absent recommendation was becoming `''` and breaking the "has a recommendation" logic.
+
+**Fix:** Use an untyped parameter (`$Recommendation` with no `[string]`) when `$null` must survive as a distinct value from empty string. Only add the `[string]` type when you actually want the coercion.
+
+---
+
+## 2026-07-19 — PowerShell tool wrapper exit code can disagree with Pester
+
+**Gotcha:** Running `Invoke-Pester` through the PowerShell tool, the wrapper sometimes reports a nonzero exit code even when Pester's own summary prints `Failed: 0` and every test is green. The wrapper's exit status is not a reliable pass/fail signal for the test run.
+
+**Fix:** Trust the Pester summary counts (`Passed: N Failed: 0`), not the tool's reported exit code. Read the actual `Passed:`/`Failed:` line before declaring pass or fail.
