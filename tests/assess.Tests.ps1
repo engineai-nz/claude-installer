@@ -275,3 +275,31 @@ Describe 'Test-DataLandscape' {
     ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
   }
 }
+
+Describe 'Export-AssessJson' {
+  $f = @(
+    (New-TestFinding 'desktop.installed' 'ok'),
+    (New-TestFinding 'machine.ram' 'gap' @{ gb = 4 }),
+    (New-TestFinding 'apps.summary' 'info' @{ detected = @('Slack') })
+  )
+  $r = [pscustomobject]@{ verdict = 'ready'; blockers = @() }
+  $path = Export-AssessJson -Findings $f -Maturity 1 -Readiness $r
+
+  It 'writes a file' {
+    Test-Path $path | Should Be $true
+  }
+  It 'writes BOM-less parseable JSON with the spec shape' {
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    ($bytes[0] -eq 0xEF) | Should Be $false
+    $doc = [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+    $doc.schemaVersion | Should Be 1
+    $doc.maturityLevel | Should Be 1
+    $doc.readiness.verdict | Should Be 'ready'
+    @($doc.findings).Count | Should Be 3
+    $doc.summary.ok | Should Be 1
+    $doc.summary.gap | Should Be 1
+    $doc.machine.hostname | Should Not Be $null
+  }
+
+  Remove-Item $path -ErrorAction SilentlyContinue
+}

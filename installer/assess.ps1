@@ -664,14 +664,108 @@ function Get-ReadinessVerdict {
 # Check registry: populated by later tasks. Order = console display order.
 $script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime', 'Test-DataLandscape', 'Test-WorkStack', 'Test-OpportunityScan')
 
+function Export-AssessJson {
+  param(
+    [Parameter(Mandatory)] [object[]] $Findings,
+    [Parameter(Mandatory)] [int] $Maturity,
+    [Parameter(Mandatory)] [object] $Readiness
+  )
+  New-Item -ItemType Directory -Force -Path $script:OutDir | Out-Null
+
+  $summary = @{ ok = 0; gap = 0; missing = 0 }
+  foreach ($f in $Findings) {
+    if ($summary.ContainsKey($f.status)) { $summary[$f.status]++ }
+  }
+
+  $doc = [ordered]@{
+    schemaVersion = 1
+    assessVersion = $script:AssessVersion
+    timestamp     = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
+    machine       = [ordered]@{
+      hostname = $env:COMPUTERNAME
+      user     = $env:USERNAME
+      os       = "$((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption) build $([System.Environment]::OSVersion.Version.Build)"
+      arch     = $env:PROCESSOR_ARCHITECTURE
+    }
+    maturityLevel = $Maturity
+    readiness     = $Readiness
+    findings      = $Findings
+    summary       = $summary
+  }
+
+  $path = Join-Path $script:OutDir "$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+  $json = $doc | ConvertTo-Json -Depth 8
+  [System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))
+  return $path
+}
+
+function Write-AssessConsole {
+  param(
+    [Parameter(Mandatory)] [object[]] $Findings,
+    [Parameter(Mandatory)] [int] $Maturity,
+    [Parameter(Mandatory)] [object] $Readiness
+  )
+  $categoryOrder = @('machine-health', 'claude-desktop', 'claude-code', 'mcp-runtime',
+                     'data-landscape', 'work-stack', 'opportunity-scan', 'internal')
+  foreach ($cat in $categoryOrder) {
+    $inCat = @($Findings | Where-Object { $_.category -eq $cat })
+    if ($inCat.Count -eq 0) { continue }
+    Write-Host ''
+    Write-Host "== $cat ==" -ForegroundColor Yellow
+    foreach ($f in $inCat) {
+      switch ($f.status) {
+        'ok'      { Write-Host "  [OK]  $($f.evidence)" -ForegroundColor Green }
+        'gap'     { Write-Host "  [GAP] $($f.evidence)" -ForegroundColor DarkYellow }
+        'missing' { Write-Host "  [--]  $($f.evidence)" -ForegroundColor Red }
+        'info'    { Write-Host "  [i]   $($f.evidence)" -ForegroundColor Gray }
+      }
+    }
+  }
+
+  $maturityLabels = @{
+    0 = 'Level 0 - Web only'; 1 = 'Level 1 - Desktop installed'
+    2 = 'Level 2 - Partially connected'; 3 = 'Level 3 - Connected'
+    4 = 'Level 4 - Orchestrated'
+  }
+  Write-Host ''
+  Write-Host 'Claude maturity: ' -NoNewline
+  Write-Host $maturityLabels[$Maturity] -ForegroundColor Cyan
+
+  Write-Host 'Install readiness: ' -NoNewline
+  switch ($Readiness.verdict) {
+    'ready'               { Write-Host 'READY (about 30 min standard install)' -ForegroundColor Green }
+    'ready-with-friction' {
+      $mins = ($Readiness.blockers | Where-Object { $_.estimateMinutes } |
+        ForEach-Object { $_.estimateMinutes } | Measure-Object -Sum).Sum
+      Write-Host "READY WITH FRICTION (add roughly $mins min)" -ForegroundColor DarkYellow
+      foreach ($b in $Readiness.blockers) { Write-Host "    - $($b.evidence)" -ForegroundColor DarkYellow }
+    }
+    'not-ready'           {
+      Write-Host 'NOT READY' -ForegroundColor Red
+      foreach ($b in $Readiness.blockers) { Write-Host "    - $($b.evidence)" -ForegroundColor Red }
+    }
+  }
+
+  $recs = @($Findings | Where-Object { $_.recommendation -and $_.status -in @('gap', 'missing') } |
+    Select-Object -First 5)
+  if ($recs.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'What we would do:' -ForegroundColor Yellow
+    $i = 1
+    foreach ($r in $recs) { Write-Host "  $i. $($r.recommendation)"; $i++ }
+  }
+}
+
 function Invoke-Assessment {
   Write-Host ''
   Write-Host 'Engine AI Claude Health Check' -ForegroundColor Yellow -NoNewline
   Write-Host " v$script:AssessVersion (read-only)" -ForegroundColor DarkGray
   Write-Host ''
 
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $findings = @()
   foreach ($check in $script:Checks) {
+    Write-Host "  scanning: $check" -ForegroundColor DarkGray
     try {
       $findings += & $check
     } catch {
@@ -679,8 +773,17 @@ function Invoke-Assessment {
         -Evidence "Check $check failed: $($_.Exception.Message)"
     }
   }
-  # Rendering and JSON export are wired in a later task.
-  $findings
+
+  $maturity = Get-MaturityLevel -Findings $findings
+  $readiness = Get-ReadinessVerdict -Findings $findings
+  Write-AssessConsole -Findings $findings -Maturity $maturity -Readiness $readiness
+
+  $jsonPath = Export-AssessJson -Findings $findings -Maturity $maturity -Readiness $readiness
+  $sw.Stop()
+  Write-Host ''
+  Write-Host "Scan took $([math]::Round($sw.Elapsed.TotalSeconds, 1))s" -ForegroundColor DarkGray
+  Write-Host "Report: $jsonPath" -ForegroundColor Cyan
+  Write-Host ''
 }
 
 if ($env:ENGINEAI_ASSESS_LIBONLY -ne '1') { Invoke-Assessment }
