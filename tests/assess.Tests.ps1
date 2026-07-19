@@ -111,3 +111,17 @@ Describe 'Test-ClaudeDesktop' {
     ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
   }
 }
+
+Describe 'Test-ClaudeCode' {
+  $findings = Test-ClaudeCode
+  It 'always reports installed state' {
+    ($findings | Where-Object { $_.id -eq 'code.installed' }) | Should Not Be $null
+  }
+  It 'uses only valid statuses' {
+    ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
+  }
+  It 'has unique ids' {
+    $ids = $findings | ForEach-Object { $_.id }
+    ($ids | Group-Object | Where-Object Count -gt 1) | Should Be $null
+  }
+}

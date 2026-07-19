@@ -307,8 +307,73 @@ function Test-ClaudeDesktop {
   $findings
 }
 
+function Test-ClaudeCode {
+  $c = 'claude-code'
+  $findings = @()
+  $claudeDir = Join-Path $env:USERPROFILE '.claude'
+
+  $cmd = Get-Command claude -ErrorAction SilentlyContinue
+  $binPath = Join-Path $claudeDir 'bin\claude.exe'
+  $installed = $false
+  if ($cmd) {
+    $installed = $true
+    $ver = $null
+    try { $ver = (& claude --version 2>$null | Select-Object -First 1) } catch { }
+    $findings += New-Finding -Id 'code.installed' -Category $c -Status 'ok' `
+      -Evidence $(if ($ver) { "On PATH, $ver" } else { 'On PATH' })
+  } elseif (Test-Path $binPath) {
+    $installed = $true
+    $findings += New-Finding -Id 'code.installed' -Category $c -Status 'ok' `
+      -Evidence 'Installed at ~\.claude\bin (not on PATH in this shell)'
+  } else {
+    $findings += New-Finding -Id 'code.installed' -Category $c -Status 'missing' `
+      -Evidence 'Claude Code CLI not installed' `
+      -Recommendation 'Install Claude Code (skills and agent workflows run here)'
+    return $findings
+  }
+
+  if (Test-Path (Join-Path $claudeDir 'settings.json')) {
+    $findings += New-Finding -Id 'code.settings' -Category $c -Status 'ok' -Evidence 'settings.json present'
+  } else {
+    $findings += New-Finding -Id 'code.settings' -Category $c -Status 'gap' `
+      -Evidence 'No settings.json' -Recommendation 'Apply Engine AI baseline settings'
+  }
+
+  $skillsDir = Join-Path $claudeDir 'skills'
+  $skills = @()
+  if (Test-Path $skillsDir) {
+    $skills = @(Get-ChildItem $skillsDir -Directory -ErrorAction SilentlyContinue | ForEach-Object Name)
+  }
+  if ($skills.Count -gt 0) {
+    $findings += New-Finding -Id 'code.skills' -Category $c -Status 'ok' `
+      -Evidence "$($skills.Count) skills: $($skills -join ', ')" -Data @{ names = $skills }
+  } else {
+    $findings += New-Finding -Id 'code.skills' -Category $c -Status 'gap' `
+      -Evidence 'No skills installed' -Recommendation 'Install the Engine AI skill bundle'
+  }
+
+  if (Test-Path (Join-Path $claudeDir 'CLAUDE.md')) {
+    $findings += New-Finding -Id 'code.claudeMd' -Category $c -Status 'ok' -Evidence 'Global CLAUDE.md present'
+  } else {
+    $findings += New-Finding -Id 'code.claudeMd' -Category $c -Status 'info' -Evidence 'No global CLAUDE.md'
+  }
+
+  # Claude Code MCP servers live in ~\.claude.json (top-level mcpServers).
+  $codeCfg = Get-JsonSafe -Path (Join-Path $env:USERPROFILE '.claude.json')
+  $names = @()
+  if ($codeCfg.valid -and $codeCfg.data.mcpServers) {
+    $names = @($codeCfg.data.mcpServers.PSObject.Properties.Name)
+  }
+  $findings += New-Finding -Id 'code.mcpServers' -Category $c `
+    -Status $(if ($names.Count -gt 0) { 'ok' } else { 'info' }) `
+    -Evidence $(if ($names.Count -gt 0) { "$($names.Count) MCP servers: $($names -join ', ')" } else { 'No Code-side MCP servers' }) `
+    -Data @{ count = $names.Count; names = $names }
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop')
+$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode')
 
 function Invoke-Assessment {
   Write-Host ''
