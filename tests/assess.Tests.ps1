@@ -112,6 +112,79 @@ Describe 'Test-ClaudeDesktop' {
   }
 }
 
+function New-TestFinding {
+  param($Id, $Status, $Data = $null)
+  New-Finding -Id $Id -Category 'test' -Status $Status -Evidence 'test' -Data $Data
+}
+
+Describe 'Get-MaturityLevel' {
+  It 'is 0 when nothing is installed' {
+    $f = @( (New-TestFinding 'desktop.installed' 'missing'), (New-TestFinding 'code.installed' 'missing') )
+    Get-MaturityLevel -Findings $f | Should Be 0
+  }
+  It 'is 1 with Desktop but zero MCPs' {
+    $f = @(
+      (New-TestFinding 'desktop.installed' 'ok'),
+      (New-TestFinding 'desktop.mcpServers' 'gap' @{ count = 0; names = @() }),
+      (New-TestFinding 'code.installed' 'missing')
+    )
+    Get-MaturityLevel -Findings $f | Should Be 1
+  }
+  It 'is 2 with MCPs configured but runtime broken' {
+    $f = @(
+      (New-TestFinding 'desktop.installed' 'ok'),
+      (New-TestFinding 'desktop.mcpServers' 'ok' @{ count = 5; names = @('a') }),
+      (New-TestFinding 'mcp.node' 'missing'),
+      (New-TestFinding 'mcp.filesystem' 'gap'),
+      (New-TestFinding 'code.installed' 'missing')
+    )
+    Get-MaturityLevel -Findings $f | Should Be 2
+  }
+  It 'is 3 with working MCPs and filesystem access but no Code/skills' {
+    $f = @(
+      (New-TestFinding 'desktop.installed' 'ok'),
+      (New-TestFinding 'desktop.mcpServers' 'ok' @{ count = 5; names = @('a') }),
+      (New-TestFinding 'mcp.node' 'ok'),
+      (New-TestFinding 'mcp.filesystem' 'ok'),
+      (New-TestFinding 'code.installed' 'missing')
+    )
+    Get-MaturityLevel -Findings $f | Should Be 3
+  }
+  It 'is 4 when Code and skills are also in place' {
+    $f = @(
+      (New-TestFinding 'desktop.installed' 'ok'),
+      (New-TestFinding 'desktop.mcpServers' 'ok' @{ count = 5; names = @('a') }),
+      (New-TestFinding 'mcp.node' 'ok'),
+      (New-TestFinding 'mcp.filesystem' 'ok'),
+      (New-TestFinding 'code.installed' 'ok'),
+      (New-TestFinding 'code.skills' 'ok')
+    )
+    Get-MaturityLevel -Findings $f | Should Be 4
+  }
+}
+
+Describe 'Get-ReadinessVerdict' {
+  It 'is not-ready on any hard stop' {
+    $f = @( (New-TestFinding 'machine.osSupport' 'missing'), (New-TestFinding 'machine.admin' 'ok'),
+            (New-TestFinding 'machine.mdm' 'ok'), (New-TestFinding 'machine.arch' 'ok') )
+    (Get-ReadinessVerdict -Findings $f).verdict | Should Be 'not-ready'
+  }
+  It 'is ready-with-friction on friction findings only' {
+    $f = @( (New-TestFinding 'machine.osSupport' 'ok'), (New-TestFinding 'machine.admin' 'ok'),
+            (New-TestFinding 'machine.mdm' 'ok'), (New-TestFinding 'machine.arch' 'ok'),
+            (New-TestFinding 'machine.patchState' 'gap'), (New-TestFinding 'machine.winget' 'gap') )
+    $v = Get-ReadinessVerdict -Findings $f
+    $v.verdict | Should Be 'ready-with-friction'
+    @($v.blockers).Count | Should Be 2
+    ($v.blockers | ForEach-Object { $_.estimateMinutes } | Measure-Object -Sum).Sum | Should BeGreaterThan 0
+  }
+  It 'is ready when everything is clean' {
+    $f = @( (New-TestFinding 'machine.osSupport' 'ok'), (New-TestFinding 'machine.admin' 'ok'),
+            (New-TestFinding 'machine.mdm' 'ok'), (New-TestFinding 'machine.arch' 'ok') )
+    (Get-ReadinessVerdict -Findings $f).verdict | Should Be 'ready'
+  }
+}
+
 Describe 'Get-InstalledPrograms' {
   It 'returns entries with display names' {
     $progs = Get-InstalledPrograms

@@ -599,6 +599,68 @@ function Test-OpportunityScan {
   $findings
 }
 
+function Get-MaturityLevel {
+  param([Parameter(Mandatory)] [object[]] $Findings)
+  $byId = @{}
+  foreach ($f in $Findings) { $byId[$f.id] = $f }
+
+  $desktopOk = $byId['desktop.installed'] -and $byId['desktop.installed'].status -eq 'ok'
+  $codeOk = $byId['code.installed'] -and $byId['code.installed'].status -eq 'ok'
+  if (-not $desktopOk -and -not $codeOk) { return 0 }
+
+  $mcpCount = 0
+  if ($byId['desktop.mcpServers'] -and $byId['desktop.mcpServers'].data) {
+    $mcpCount = [int]$byId['desktop.mcpServers'].data.count
+  }
+  if ($mcpCount -eq 0) { return 1 }
+
+  $nodeOk = $byId['mcp.node'] -and $byId['mcp.node'].status -eq 'ok'
+  $fsOk = $byId['mcp.filesystem'] -and $byId['mcp.filesystem'].status -eq 'ok'
+  if (-not ($nodeOk -and $fsOk)) { return 2 }
+
+  $skillsOk = $byId['code.skills'] -and $byId['code.skills'].status -eq 'ok'
+  if ($codeOk -and $skillsOk) { return 4 }
+  return 3
+}
+
+function Get-ReadinessVerdict {
+  param([Parameter(Mandatory)] [object[]] $Findings)
+  $byId = @{}
+  foreach ($f in $Findings) { $byId[$f.id] = $f }
+
+  # Hard stops: any of these not 'ok' means NOT READY.
+  $hardStopIds = @('machine.osSupport', 'machine.admin', 'machine.mdm', 'machine.arch')
+  # Friction: 'gap' here means READY WITH FRICTION, with a time cost.
+  $frictionEstimates = @{
+    'machine.patchState'      = 45
+    'machine.disk'            = 20
+    'machine.ram'             = 0
+    'machine.winget'          = 20
+    'machine.antivirus'       = 15
+    'machine.pendingReboot'   = 10
+    'machine.executionPolicy' = 10
+  }
+
+  $blockers = @()
+  $hard = $false
+  foreach ($id in $hardStopIds) {
+    if ($byId[$id] -and $byId[$id].status -ne 'ok') {
+      $hard = $true
+      $blockers += [pscustomobject]@{ id = $id; evidence = $byId[$id].evidence; estimateMinutes = $null }
+    }
+  }
+  foreach ($id in $frictionEstimates.Keys) {
+    if ($byId[$id] -and $byId[$id].status -eq 'gap') {
+      $blockers += [pscustomobject]@{ id = $id; evidence = $byId[$id].evidence; estimateMinutes = $frictionEstimates[$id] }
+    }
+  }
+
+  $verdict = if ($hard) { 'not-ready' }
+             elseif (@($blockers).Count -gt 0) { 'ready-with-friction' }
+             else { 'ready' }
+  [pscustomobject]@{ verdict = $verdict; blockers = @($blockers) }
+}
+
 # Check registry: populated by later tasks. Order = console display order.
 $script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop', 'Test-ClaudeCode', 'Test-McpRuntime', 'Test-DataLandscape', 'Test-WorkStack', 'Test-OpportunityScan')
 
