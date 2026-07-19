@@ -125,3 +125,15 @@ Also: `Start-Process claude.exe` on an already-running Claude Desktop just focus
 **Gotcha:** Running `Invoke-Pester` through the PowerShell tool, the wrapper sometimes reports a nonzero exit code even when Pester's own summary prints `Failed: 0` and every test is green. The wrapper's exit status is not a reliable pass/fail signal for the test run.
 
 **Fix:** Trust the Pester summary counts (`Passed: N Failed: 0`), not the tool's reported exit code. Read the actual `Passed:`/`Failed:` line before declaring pass or fail.
+
+---
+
+## 2026-07-19 — MDM and admin false positives in Test-MachineHealth (assess.ps1)
+
+Both caught on the first real-machine run and both produced false NOT READY verdicts.
+
+**1. Enrollments registry has built-in placeholder providers on every Windows machine.**
+`HKLM:\SOFTWARE\Microsoft\Enrollments` always contains subkeys with `ProviderID` values `Deploy Authority`, `Cloud Authority`, and `Local Authority` on stock Windows 10/11 — these are NOT MDM. Treating any `ProviderID` as enrolment flagged every machine as MDM-managed while `dsregcmd /status` showed AzureAdJoined NO, WorkplaceJoined NO, DomainJoined NO. Fix: filter the three built-in providers and only report MDM for a real ProviderID (surface it, plus UPN when present).
+
+**2. WindowsIdentity.Groups omits deny-only SIDs (UAC filtered token).**
+`[Security.Principal.WindowsIdentity]::GetCurrent().Groups` does not include the Administrators SID (S-1-5-32-544) when it is present as deny-only on a UAC-filtered (unelevated) token. So nearly every admin running unelevated read as "not an administrator". `whoami /groups` still lists it as `Group used for deny only`. Fix: when both the elevated check and the `.Groups` lookup fail, fall back to matching `S-1-5-32-544` in `whoami /groups` output and treat a hit as admin (UAC filtered token, can elevate).

@@ -134,11 +134,20 @@ function Test-MachineHealth {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $inAdmins = [bool]($identity.Groups | Where-Object { $_.Value -eq 'S-1-5-32-544' })
   $elevated = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  $denyOnlyAdmin = $false
+  if (-not $elevated -and -not $inAdmins) {
+    try {
+      $denyOnlyAdmin = [bool]((& whoami /groups) -match 'S-1-5-32-544')
+    } catch { }
+  }
   if ($elevated) {
     $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'ok' -Evidence 'Running elevated'
   } elseif ($inAdmins) {
     $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'ok' `
       -Evidence 'User is an administrator (not currently elevated)'
+  } elseif ($denyOnlyAdmin) {
+    $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'ok' `
+      -Evidence 'User is an administrator (UAC filtered token, can elevate)'
   } else {
     $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'missing' `
       -Evidence 'Current user is not an administrator' `
@@ -155,17 +164,22 @@ function Test-MachineHealth {
   }
 
   # MDM/Intune enrollment: registry read only.
-  $mdm = $false
+  $builtInProviders = @('Deploy Authority', 'Cloud Authority', 'Local Authority')
+  $mdmProvider = $null
   try {
     $enrollments = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' -ErrorAction Stop
     foreach ($e in $enrollments) {
       $p = Get-ItemProperty $e.PSPath -ErrorAction SilentlyContinue
-      if ($p.ProviderID) { $mdm = $true; break }
+      if ($p.ProviderID -and ($p.ProviderID -notin $builtInProviders)) {
+        $mdmProvider = $p.ProviderID
+        if ($p.UPN) { $mdmProvider = "$($p.ProviderID) ($($p.UPN))" }
+        break
+      }
     }
   } catch { }
-  if ($mdm) {
+  if ($mdmProvider) {
     $findings += New-Finding -Id 'machine.mdm' -Category $c -Status 'missing' `
-      -Evidence 'MDM/Intune enrollment detected' `
+      -Evidence "MDM enrollment detected: $mdmProvider" `
       -Recommendation 'Corporate-managed machine: out of standard scope, needs IT involvement'
   } else {
     $findings += New-Finding -Id 'machine.mdm' -Category $c -Status 'ok' -Evidence 'No MDM enrollment'
