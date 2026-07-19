@@ -217,8 +217,98 @@ function Test-MachineHealth {
   $findings
 }
 
+function Get-ClaudeDesktopContext {
+  # Standard install: %LOCALAPPDATA%\AnthropicClaude\app-<version>\claude.exe
+  # MSIX install: config under the package LocalCache path.
+  $ctx = [pscustomobject]@{ installType = 'none'; version = $null; configDir = $null; configPath = $null }
+
+  $root = Join-Path $env:LOCALAPPDATA 'AnthropicClaude'
+  $msix = Get-AppxPackage -Name '*Claude*' -ErrorAction SilentlyContinue | Select-Object -First 1
+
+  if (Test-Path $root) {
+    $ctx.installType = 'standard'
+    $appDir = Get-ChildItem $root -Directory -Filter 'app-*' -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($appDir) { $ctx.version = $appDir.Name.Replace('app-', '') }
+    $ctx.configDir = Join-Path $env:APPDATA 'Claude'
+  } elseif ($msix) {
+    $ctx.installType = 'msix'
+    $ctx.version = $msix.Version
+    $ctx.configDir = Join-Path $env:LOCALAPPDATA "Packages\$($msix.PackageFamilyName)\LocalCache\Roaming\Claude"
+  }
+
+  if ($ctx.configDir) {
+    $ctx.configPath = Join-Path $ctx.configDir 'claude_desktop_config.json'
+  }
+  return $ctx
+}
+
+function Test-ClaudeDesktop {
+  $c = 'claude-desktop'
+  $findings = @()
+  $ctx = Get-ClaudeDesktopContext
+
+  if ($ctx.installType -eq 'none') {
+    $findings += New-Finding -Id 'desktop.installed' -Category $c -Status 'missing' `
+      -Evidence 'Claude Desktop not installed' `
+      -Recommendation 'Install Claude Desktop (winget Anthropic.Claude)'
+    return $findings
+  }
+
+  $verText = if ($ctx.version) { "v$($ctx.version)" } else { 'version unknown' }
+  $findings += New-Finding -Id 'desktop.installed' -Category $c -Status 'ok' `
+    -Evidence "$($ctx.installType) install, $verText"
+
+  $cfg = Get-JsonSafe -Path $ctx.configPath
+  if (-not $cfg.exists) {
+    $findings += New-Finding -Id 'desktop.config' -Category $c -Status 'missing' `
+      -Evidence 'No claude_desktop_config.json' `
+      -Recommendation 'No MCP configuration exists; full setup required'
+    return $findings
+  }
+  if (-not $cfg.valid) {
+    $findings += New-Finding -Id 'desktop.config' -Category $c -Status 'gap' `
+      -Evidence "Config invalid JSON: $($cfg.error)" `
+      -Recommendation 'Config is corrupt; Claude Desktop cannot load it'
+    return $findings
+  }
+  $bomNote = if ($cfg.hasBom) { ' (has UTF-8 BOM - Claude rejects this)' } else { '' }
+  $cfgStatus = if ($cfg.hasBom) { 'gap' } else { 'ok' }
+  $findings += New-Finding -Id 'desktop.config' -Category $c -Status $cfgStatus `
+    -Evidence "Config valid$bomNote" `
+    -Recommendation $(if ($cfg.hasBom) { 'Rewrite config as BOM-less UTF-8' } else { $null })
+
+  $serverNames = @()
+  if ($cfg.data.mcpServers) {
+    $serverNames = @($cfg.data.mcpServers.PSObject.Properties.Name)
+  }
+  if ($serverNames.Count -gt 0) {
+    $findings += New-Finding -Id 'desktop.mcpServers' -Category $c -Status 'ok' `
+      -Evidence "$($serverNames.Count) MCP servers: $($serverNames -join ', ')" `
+      -Data @{ count = $serverNames.Count; names = $serverNames }
+  } else {
+    $findings += New-Finding -Id 'desktop.mcpServers' -Category $c -Status 'gap' `
+      -Evidence 'Config exists but no MCP servers configured' `
+      -Recommendation 'Install the Engine AI MCP bundle' `
+      -Data @{ count = 0; names = @() }
+  }
+
+  $devPath = Join-Path $ctx.configDir 'developer_settings.json'
+  if (Test-Path $devPath) {
+    $findings += New-Finding -Id 'desktop.devSettings' -Category $c -Status 'ok' -Evidence 'developer_settings.json present'
+  } else {
+    $findings += New-Finding -Id 'desktop.devSettings' -Category $c -Status 'info' -Evidence 'No developer_settings.json'
+  }
+
+  $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*laude*' }
+  $findings += New-Finding -Id 'desktop.running' -Category $c -Status 'info' `
+    -Evidence $(if ($running) { 'Claude Desktop is currently running' } else { 'Claude Desktop not running' })
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @('Test-MachineHealth')
+$script:Checks = @('Test-MachineHealth', 'Test-ClaudeDesktop')
 
 function Invoke-Assessment {
   Write-Host ''

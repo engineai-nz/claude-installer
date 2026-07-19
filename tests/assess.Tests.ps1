@@ -80,3 +80,34 @@ Describe 'Test-MachineHealth' {
     ($findings | Where-Object { $_.id -eq 'machine.ram' }).data.gb | Should BeGreaterThan 0
   }
 }
+
+Describe 'Get-ClaudeDesktopContext' {
+  It 'returns a context object with a valid installType' {
+    $ctx = Get-ClaudeDesktopContext
+    $ctx.installType | Should Match '^(standard|msix|none)$'
+  }
+  It 'resolves a config path when installed' {
+    $ctx = Get-ClaudeDesktopContext
+    if ($ctx.installType -ne 'none') {
+      $ctx.configPath | Should Match 'claude_desktop_config\.json$'
+    } else {
+      $ctx.configPath | Should Be $null
+    }
+  }
+}
+
+Describe 'Test-ClaudeDesktop' {
+  $findings = Test-ClaudeDesktop
+  It 'always reports installed state' {
+    ($findings | Where-Object { $_.id -eq 'desktop.installed' }) | Should Not Be $null
+  }
+  It 'reports mcpServers with a count in data when config is valid' {
+    $mcp = $findings | Where-Object { $_.id -eq 'desktop.mcpServers' }
+    if ($mcp -and $mcp.status -ne 'missing') {
+      $mcp.data.count -ge 0 | Should Be $true
+    }
+  }
+  It 'uses only valid statuses' {
+    ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
+  }
+}
