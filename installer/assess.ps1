@@ -105,8 +105,8 @@ function Test-MachineHealth {
   }
 
   # Hardware.
-  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-  $ramGb = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1MB, 1) } else { 0 }
+  $cs2 = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+  $ramGb = if ($cs2 -and $cs2.TotalPhysicalMemory) { [math]::Round($cs2.TotalPhysicalMemory / 1GB, 1) } else { 0 }
   $ramStatus = if ($ramGb -ge 8) { 'ok' } else { 'gap' }
   $findings += New-Finding -Id 'machine.ram' -Category $c -Status $ramStatus `
     -Evidence "$ramGb GB RAM" -Data @{ gb = $ramGb } `
@@ -314,15 +314,12 @@ function Test-ClaudeCode {
 
   $cmd = Get-Command claude -ErrorAction SilentlyContinue
   $binPath = Join-Path $claudeDir 'bin\claude.exe'
-  $installed = $false
   if ($cmd) {
-    $installed = $true
     $ver = $null
     try { $ver = (& claude --version 2>$null | Select-Object -First 1) } catch { }
     $findings += New-Finding -Id 'code.installed' -Category $c -Status 'ok' `
       -Evidence $(if ($ver) { "On PATH, $ver" } else { 'On PATH' })
   } elseif (Test-Path $binPath) {
-    $installed = $true
     $findings += New-Finding -Id 'code.installed' -Category $c -Status 'ok' `
       -Evidence 'Installed at ~\.claude\bin (not on PATH in this shell)'
   } else {
@@ -383,7 +380,7 @@ function Test-McpServerEntry {
   $problems = @()
 
   $raw = $Server | ConvertTo-Json -Depth 5 -Compress
-  if ($raw -match '\{\{[A-Za-z0-9_]+\}\}') {
+  if ($raw -match '\{\{[A-Za-z0-9_-]+\}\}') {
     $problems += 'unfilled placeholder tokens'
   }
 
@@ -639,7 +636,7 @@ function Get-ReadinessVerdict {
   # Hard stops: any of these not 'ok' means NOT READY.
   $hardStopIds = @('machine.osSupport', 'machine.admin', 'machine.mdm', 'machine.arch')
   # Friction: 'gap' here means READY WITH FRICTION, with a time cost.
-  $frictionEstimates = @{
+  $frictionEstimates = [ordered]@{
     'machine.patchState'      = 45
     'machine.disk'            = 20
     'machine.ram'             = 0
@@ -652,7 +649,10 @@ function Get-ReadinessVerdict {
   $blockers = @()
   $hard = $false
   foreach ($id in $hardStopIds) {
-    if ($byId[$id] -and $byId[$id].status -ne 'ok') {
+    if (-not $byId.ContainsKey($id)) {
+      $hard = $true
+      $blockers += [pscustomobject]@{ id = $id; evidence = "Health check incomplete: $id missing"; estimateMinutes = $null }
+    } elseif ($byId[$id].status -ne 'ok') {
       $hard = $true
       $blockers += [pscustomobject]@{ id = $id; evidence = $byId[$id].evidence; estimateMinutes = $null }
     }
@@ -745,6 +745,7 @@ function Write-AssessConsole {
     'ready-with-friction' {
       $mins = ($Readiness.blockers | Where-Object { $_.estimateMinutes } |
         ForEach-Object { $_.estimateMinutes } | Measure-Object -Sum).Sum
+      if (-not $mins) { $mins = 0 }
       Write-Host "READY WITH FRICTION (add roughly $mins min)" -ForegroundColor DarkYellow
       foreach ($b in $Readiness.blockers) { Write-Host "    - $($b.evidence)" -ForegroundColor DarkYellow }
     }

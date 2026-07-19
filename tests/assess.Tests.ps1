@@ -183,6 +183,12 @@ Describe 'Get-ReadinessVerdict' {
             (New-TestFinding 'machine.mdm' 'ok'), (New-TestFinding 'machine.arch' 'ok') )
     (Get-ReadinessVerdict -Findings $f).verdict | Should Be 'ready'
   }
+  It 'is not-ready when machine-health findings are absent' {
+    $f = @( (New-TestFinding 'desktop.installed' 'ok') )
+    $v = Get-ReadinessVerdict -Findings $f
+    $v.verdict | Should Be 'not-ready'
+    @($v.blockers).Count | Should Be 4
+  }
 }
 
 Describe 'Get-InstalledPrograms' {
@@ -250,6 +256,11 @@ Describe 'Test-McpServerEntry' {
   It 'flags a non-existent absolute command path' {
     $server = ('{"command":"C:\\nope\\missing.exe","args":[]}' | ConvertFrom-Json)
     $f = Test-McpServerEntry -Name 'y' -Server $server -NpxAvailable $true
+    $f.status | Should Be 'gap'
+  }
+  It 'flags hyphenated placeholder tokens as gap' {
+    $server = ('{"command":"npx","args":["-y","x"],"env":{"KEY":"{{API-KEY}}"}}' | ConvertFrom-Json)
+    $f = Test-McpServerEntry -Name 'h' -Server $server -NpxAvailable $true
     $f.status | Should Be 'gap'
   }
 }
