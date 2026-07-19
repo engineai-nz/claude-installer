@@ -67,8 +67,158 @@ function Get-JsonSafe {
   return $result
 }
 
+function Test-MachineHealth {
+  $c = 'machine-health'
+  $findings = @()
+
+  # OS support. Build 22000+ = Windows 11. Windows 10 reached end of
+  # support in October 2025.
+  $build = [System.Environment]::OSVersion.Version.Build
+  $osName = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
+  if ($build -ge 22000) {
+    $findings += New-Finding -Id 'machine.osSupport' -Category $c -Status 'ok' `
+      -Evidence "$osName build $build"
+  } else {
+    $findings += New-Finding -Id 'machine.osSupport' -Category $c -Status 'missing' `
+      -Evidence "$osName build $build - Windows 10 is out of support (Oct 2025)" `
+      -Recommendation 'Upgrade to Windows 11 or replace the machine before any install'
+  }
+
+  # Patch state: newest hotfix install date, 90-day staleness threshold.
+  $lastPatch = $null
+  try {
+    $lastPatch = Get-HotFix -ErrorAction Stop |
+      Where-Object { $_.InstalledOn } |
+      Sort-Object InstalledOn -Descending |
+      Select-Object -First 1 -ExpandProperty InstalledOn
+  } catch { }
+  if ($lastPatch -and $lastPatch -gt (Get-Date).AddDays(-90)) {
+    $findings += New-Finding -Id 'machine.patchState' -Category $c -Status 'ok' `
+      -Evidence "Last update $($lastPatch.ToString('yyyy-MM-dd'))"
+  } elseif ($lastPatch) {
+    $findings += New-Finding -Id 'machine.patchState' -Category $c -Status 'gap' `
+      -Evidence "No updates since $($lastPatch.ToString('yyyy-MM-dd'))" `
+      -Recommendation 'Run Windows Update before install day (can take an hour on a stale machine)'
+  } else {
+    $findings += New-Finding -Id 'machine.patchState' -Category $c -Status 'info' `
+      -Evidence 'Could not read update history'
+  }
+
+  # Hardware.
+  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+  $ramGb = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1MB, 1) } else { 0 }
+  $ramStatus = if ($ramGb -ge 8) { 'ok' } else { 'gap' }
+  $findings += New-Finding -Id 'machine.ram' -Category $c -Status $ramStatus `
+    -Evidence "$ramGb GB RAM" -Data @{ gb = $ramGb } `
+    -Recommendation $(if ($ramStatus -eq 'gap') { '8 GB minimum for Claude Desktop plus MCP servers; expect sluggish performance' } else { $null })
+
+  $sysLetter = $env:SystemDrive.TrimEnd(':')
+  $disk = Get-PSDrive -Name $sysLetter -ErrorAction SilentlyContinue
+  $freeGb = if ($disk) { [math]::Round($disk.Free / 1GB, 1) } else { 0 }
+  $diskStatus = if ($freeGb -ge 10) { 'ok' } else { 'gap' }
+  $findings += New-Finding -Id 'machine.disk' -Category $c -Status $diskStatus `
+    -Evidence "$freeGb GB free on $env:SystemDrive" -Data @{ freeGb = $freeGb } `
+    -Recommendation $(if ($diskStatus -eq 'gap') { 'Free at least 10 GB before install' } else { $null })
+
+  $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
+  $findings += New-Finding -Id 'machine.cpu' -Category $c -Status 'info' `
+    -Evidence "$($cpu.Name) ($($cpu.NumberOfCores) cores)"
+
+  $arch = $env:PROCESSOR_ARCHITECTURE
+  $archStatus = if ($arch -eq 'AMD64') { 'ok' } elseif ($arch -eq 'ARM64') { 'gap' } else { 'missing' }
+  $findings += New-Finding -Id 'machine.arch' -Category $c -Status $archStatus `
+    -Evidence $arch `
+    -Recommendation $(if ($archStatus -ne 'ok') { 'Non-AMD64 architecture: verify Claude Desktop and MCP support before committing' } else { $null })
+
+  # Admin reality.
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $inAdmins = [bool]($identity.Groups | Where-Object { $_.Value -eq 'S-1-5-32-544' })
+  $elevated = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if ($elevated) {
+    $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'ok' -Evidence 'Running elevated'
+  } elseif ($inAdmins) {
+    $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'ok' `
+      -Evidence 'User is an administrator (not currently elevated)'
+  } else {
+    $findings += New-Finding -Id 'machine.admin' -Category $c -Status 'missing' `
+      -Evidence 'Current user is not an administrator' `
+      -Recommendation 'Get the machine admin password or an admin account before install day'
+  }
+
+  $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+  if ($cs -and $cs.PartOfDomain) {
+    $findings += New-Finding -Id 'machine.domainJoin' -Category $c -Status 'gap' `
+      -Evidence "Domain-joined: $($cs.Domain)" `
+      -Recommendation 'Company-managed machine: IT sign-off required before install'
+  } else {
+    $findings += New-Finding -Id 'machine.domainJoin' -Category $c -Status 'ok' -Evidence 'Not domain-joined'
+  }
+
+  # MDM/Intune enrollment: registry read only.
+  $mdm = $false
+  try {
+    $enrollments = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' -ErrorAction Stop
+    foreach ($e in $enrollments) {
+      $p = Get-ItemProperty $e.PSPath -ErrorAction SilentlyContinue
+      if ($p.ProviderID) { $mdm = $true; break }
+    }
+  } catch { }
+  if ($mdm) {
+    $findings += New-Finding -Id 'machine.mdm' -Category $c -Status 'missing' `
+      -Evidence 'MDM/Intune enrollment detected' `
+      -Recommendation 'Corporate-managed machine: out of standard scope, needs IT involvement'
+  } else {
+    $findings += New-Finding -Id 'machine.mdm' -Category $c -Status 'ok' -Evidence 'No MDM enrollment'
+  }
+
+  # Install friction.
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    $findings += New-Finding -Id 'machine.winget' -Category $c -Status 'ok' -Evidence 'winget available'
+  } else {
+    $findings += New-Finding -Id 'machine.winget' -Category $c -Status 'gap' `
+      -Evidence 'winget not available' `
+      -Recommendation 'Install App Installer from the Microsoft Store, or budget time for manual installs'
+  }
+
+  $findings += New-Finding -Id 'machine.psVersion' -Category $c -Status 'info' `
+    -Evidence "PowerShell $($PSVersionTable.PSVersion)"
+
+  $policy = Get-ExecutionPolicy
+  $polStatus = if ($policy -in @('Restricted', 'AllSigned')) { 'gap' } else { 'ok' }
+  $findings += New-Finding -Id 'machine.executionPolicy' -Category $c -Status $polStatus `
+    -Evidence "Execution policy: $policy" `
+    -Recommendation $(if ($polStatus -eq 'gap') { 'Restrictive execution policy will block install scripts' } else { $null })
+
+  # Third-party AV via Security Center (workstations only; guard).
+  $avNames = @()
+  try {
+    $avNames = Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName 'AntiVirusProduct' -ErrorAction Stop |
+      Select-Object -ExpandProperty displayName
+  } catch { }
+  $thirdParty = @($avNames | Where-Object { $_ -and $_ -notmatch 'Defender' })
+  if ($thirdParty.Count -gt 0) {
+    $findings += New-Finding -Id 'machine.antivirus' -Category $c -Status 'gap' `
+      -Evidence "Third-party AV: $($thirdParty -join ', ')" `
+      -Recommendation 'Third-party antivirus can block or slow installers; budget extra time'
+  } else {
+    $findings += New-Finding -Id 'machine.antivirus' -Category $c -Status 'ok' `
+      -Evidence $(if ($avNames) { "Windows Defender only" } else { 'No AV product reported' })
+  }
+
+  $rebootPending = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
+                   (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+  if ($rebootPending) {
+    $findings += New-Finding -Id 'machine.pendingReboot' -Category $c -Status 'gap' `
+      -Evidence 'Reboot pending' -Recommendation 'Reboot before install day'
+  } else {
+    $findings += New-Finding -Id 'machine.pendingReboot' -Category $c -Status 'ok' -Evidence 'No pending reboot'
+  }
+
+  $findings
+}
+
 # Check registry: populated by later tasks. Order = console display order.
-$script:Checks = @()
+$script:Checks = @('Test-MachineHealth')
 
 function Invoke-Assessment {
   Write-Host ''

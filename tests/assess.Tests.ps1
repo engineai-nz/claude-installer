@@ -57,3 +57,26 @@ Describe 'Get-JsonSafe' {
 
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
+
+Describe 'Test-MachineHealth' {
+  $findings = Test-MachineHealth
+  It 'returns findings' {
+    @($findings).Count | Should BeGreaterThan 10
+  }
+  It 'uses only valid statuses' {
+    ($findings | Where-Object { $_.status -notin @('ok','gap','missing','info') }) | Should Be $null
+  }
+  It 'includes the readiness-critical ids' {
+    foreach ($id in @('machine.osSupport','machine.admin','machine.mdm','machine.arch',
+                      'machine.patchState','machine.disk','machine.ram','machine.winget')) {
+      ($findings | Where-Object { $_.id -eq $id }) | Should Not Be $null
+    }
+  }
+  It 'has unique ids' {
+    $ids = $findings | ForEach-Object { $_.id }
+    ($ids | Group-Object | Where-Object Count -gt 1) | Should Be $null
+  }
+  It 'reports RAM as a number in data' {
+    ($findings | Where-Object { $_.id -eq 'machine.ram' }).data.gb | Should BeGreaterThan 0
+  }
+}
