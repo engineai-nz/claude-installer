@@ -176,3 +176,16 @@ MCP servers run via `npx`, which requires Node.js on the client. This is a non-n
 **Why:** brew install is the simplest, most reliable silent install on macOS. Direct-zip install of Claude Desktop requires fetching `RELEASES.json`, parsing the latest version, constructing a hashed URL, `ditto -xk`ing, and `xattr -dr com.apple.quarantine`. Brittle on version bumps. Node.js direct pkg requires `sudo installer` which we'd rather avoid.
 
 **Acceptance-test implication:** V1 acceptance on a fresh macOS VM assumes Homebrew is pre-installed, or Ben installs it on-site before running the installer. Post-V1, bundle Homebrew install as a preflight step if self-serve demand appears.
+
+---
+
+## 2026-07-20 — assess.sh port architecture
+
+**Decision:** the macOS health check is a strict behavioural port of assess.ps1: identical finding IDs, categories, maturity thresholds, readiness gates, and JSON schema. Platform divergence is allowed only where the platform genuinely differs (e.g. no winget-friction entry on macOS, where the installer never uses Homebrew), and every divergence is documented inline.
+
+**Rationale:** cross-platform reports must be directly comparable in client conversations and future tooling. One schema, one scoring model.
+
+**Also decided:**
+- Probes isolated in `probe_*` functions as the only place external commands run. Enables full stub-based testing off-Darwin (137-test pure-bash harness runs on Linux CI and dev boxes).
+- bash 3.2.57 as the hard floor, no jq/python/timeout(1) deps: the script must run on a factory-fresh Mac via `curl | bash`.
+- claude-templates build-bundles.py now auto-discovers industries by globbing `industries/*/manifest.json` instead of a hardcoded list. Adding an industry = adding a directory; installer gates in install.sh/install.ps1 remain the only hardcoded lists (kept deliberately, as a typo guard on client machines).

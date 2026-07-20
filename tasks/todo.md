@@ -8,7 +8,8 @@
 
 Everything below is built and verified locally but UNCOMMITTED in both repos.
 
-- [ ] Review + commit + push claude-installer (assess.sh, test harness, install.sh fixes, install.bat, install.ps1 gate, README)
+- [x] Commit claude-installer (36af436 assess.sh + harness, acb29f7 installer fixes + .bat, 0fd6820 memory files)
+- [ ] Push claude-installer (main is 3 ahead of origin; one-liners stay stale until pushed)
 - [ ] Commit + push claude-templates (4 industry scaffolds, auto-discovery in build-bundles.py), then tag v0.2.0 so all 10 bundles get released. Until tagged, the widened industry gates in both installers 404 at download time for the four new industries.
 - [ ] Field testing: 3 sessions (~60 min total) per the HTML guide artifact "Claude Installer Field Test Guide" (claude.ai/code/artifact/4fa157aa-9078-4355-8569-92f9476bac35): fresh Win11, macOS (first bash 3.2 run of assess.sh), Tom's QCC box (assess only)
 - [ ] Optional: GitHub Actions CI matrix (windows-latest + macos-latest run assess + harness on every push) — offered, not yet wired
