@@ -1,18 +1,34 @@
 # Todo — Claude Installer
 
-**Last updated:** 2026-07-19
+**Last updated:** 2026-07-20
 
 ---
 
+## NEXT: commit, release, field test
+
+Everything below is built and verified locally but UNCOMMITTED in both repos.
+
+- [ ] Review + commit + push claude-installer (assess.sh, test harness, install.sh fixes, install.bat, install.ps1 gate, README)
+- [ ] Commit + push claude-templates (4 industry scaffolds, auto-discovery in build-bundles.py), then tag v0.2.0 so all 10 bundles get released. Until tagged, the widened industry gates in both installers 404 at download time for the four new industries.
+- [ ] Field testing: 3 sessions (~60 min total) per the HTML guide artifact "Claude Installer Field Test Guide" (claude.ai/code/artifact/4fa157aa-9078-4355-8569-92f9476bac35): fresh Win11, macOS (first bash 3.2 run of assess.sh), Tom's QCC box (assess only)
+- [ ] Optional: GitHub Actions CI matrix (windows-latest + macos-latest run assess + harness on every push) — offered, not yet wired
+
 ## assess.ps1 (health check) — V1 built
 
-Built on branch `assess-v1`. Read-only machine assessment: 7 check categories, maturity + readiness rollups, console + JSON output. 42 Pester tests passing. See `docs/prerequisites.md` and the design doc.
+Merged to `main`. Read-only machine assessment: 7 check categories, maturity + readiness rollups, console + JSON output. 42 Pester tests passing. See `docs/prerequisites.md` and the design doc.
 
 - [x] V1 built and verified on Ben's laptop (10s scan, Level 1, all categories, JSON written, no config writes)
+- [x] Merge `assess-v1` to `main` (pushed as of e451663)
 - [ ] Fresh Windows 11 VM test — must hit Level 0 with zero uncaught exceptions on a truly clean install
 - [ ] Old/messy real-machine test (Tom's QCC box) — surface edge cases on an established, cluttered machine
-- [ ] Merge `assess-v1` to `main` and push
-- [ ] macOS `assess.sh` equivalent (post-V1)
+
+## assess.sh (macOS health check) — built 2026-07-20, needs real-Mac run
+
+Full port of assess.ps1: same finding IDs, maturity levels, readiness gates, JSON schema. bash 3.2 compatible, no jq/python/timeout deps, probes isolated in `probe_*` functions for stubbing. Built + adversarially reviewed by 16-agent workflow (41 findings, 18 blocker/major fixed: BOM handling, fail-closed MDM, crash-safe check dispatch, dead-mount watchdogs, secret-safe temp files, case-insensitive MCP match).
+
+- [x] `installer/assess.sh` written and hardened
+- [x] `tests/test-assess-sh.sh` — pure-bash harness, 137 tests passing on Linux
+- [ ] First run on real macOS /bin/bash 3.2 (field test session B)
 
 ---
 
@@ -26,8 +42,10 @@ Built on branch `assess-v1`. Read-only machine assessment: 7 check categories, m
 ## V1 build — installer
 
 - [x] `installer/install.sh` — macOS entry point with 8-phase flow
+- [x] install.sh parity fixes (2026-07-20): quit-and-poll before config write (the Electron config-wipe bug, macOS side), children run with stdin detached so `curl | bash` survives interactive installers, df guard, unguarded `open -a` no longer fails a good install
 - [x] `installer/install.ps1` — Windows equivalent (MSIX-aware, handles winget)
-- [x] Flag parsing: `--industry <name> --stack <google|microsoft>`
+- [x] `installer/install.bat` — double-click wrapper: self-elevates, ExecutionPolicy bypass scoped to child only, optional SHA256 pin, pauses on exit (2026-07-20, never field-tested)
+- [x] Flag parsing: `--industry <name> --stack <google|microsoft>` — both installers now accept all five industries
 - [x] Manifest resolver moved factory-side (pre-merged bundles — see `docs/decisions.md`)
 - [x] Backup system: timestamped copy + `restore.{sh,ps1}` in backup folder
 - [x] Logging to `~/.engineai-installer/logs/`
@@ -45,7 +63,8 @@ Built on branch `assess-v1`. Read-only machine assessment: 7 check categories, m
 - [x] `scripts/build-bundles.py` — factory-side merge + tarball
 - [x] `.github/workflows/release.yml` — tag push → build → attach to release
 - [x] v0.1.0 tagged and released with property-google + property-microsoft tarballs
-- [ ] Placeholder folders for `finance`, `investment`, `property-development`, `small-business` — scaffold later when content is ready
+- [x] `finance`, `investment`, `property-development`, `small-business` scaffolded (2026-07-20): manifest + mcp.json ({{PLACEHOLDER}} tokens only, verified-real MCP servers) + README + starter skill each. build-bundles.py now auto-discovers industries with a manifest.json; all 10 bundles build clean locally.
+- [ ] Tag claude-templates v0.2.0 to release the 10 bundles (blocker for the four new industries installing)
 
 ## V1 acceptance test
 

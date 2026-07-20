@@ -137,3 +137,29 @@ Both caught on the first real-machine run and both produced false NOT READY verd
 
 **2. WindowsIdentity.Groups omits deny-only SIDs (UAC filtered token).**
 `[Security.Principal.WindowsIdentity]::GetCurrent().Groups` does not include the Administrators SID (S-1-5-32-544) when it is present as deny-only on a UAC-filtered (unelevated) token. So nearly every admin running unelevated read as "not an administrator". `whoami /groups` still lists it as `Group used for deny only`. Fix: when both the elevated check and the `.Groups` lookup fail, fall back to matching `S-1-5-32-544` in `whoami /groups` output and treat a hit as admin (UAC filtered token, can elevate).
+
+---
+
+## 2026-07-20 — macOS has no timeout(1); dead network mounts hang even [ -d ]
+
+**Gotcha:** Clean macOS ships no `timeout` or `gtimeout` binary (GNU coreutils absent). Worse, even a bash builtin test like `[ -d /Volumes/dead-share ]` can block indefinitely on a wedged SMB mount or a cloud File Provider root - there is no way to time out a builtin.
+
+**Fix (assess.sh):** a `run_timed` watchdog that backgrounds the command and kills it after N seconds, plus a `path_is_risky` classifier. Risky paths (/Volumes, Dropbox/OneDrive/Drive roots, File Provider paths) route through `/bin/test` as an external process under `run_timed 3`; local paths keep the fast builtin. A wedged mount degrades to "not detected" instead of freezing the client's terminal.
+
+**How to apply:** any macOS script that stats paths a user might have mounted must assume some of them are dead. External /bin/test under a kill-timer is the only portable escape hatch.
+
+---
+
+## 2026-07-20 — BOM'd JSON configs: strip before parsing, and plutil chokes too
+
+**Gotcha:** claude_desktop_config.json written by older PowerShell (Set-Content -Encoding utf8 on PS5) carries a UTF-8 BOM. On the macOS side, both JSON linting and `plutil -extract` reject the BOM, so a valid-but-BOM'd config read as "invalid JSON" and killed all downstream desktop findings.
+
+**Fix:** strip the first 3 bytes to a scratch copy (`tail -c +4`) before validating or extracting; report the BOM itself as its own gap finding. Windows already learned the write-side half of this lesson (2026-04-18); this is the read-side half.
+
+---
+
+## 2026-07-20 — set -e + per-check isolation: subshell dispatch with finding replay
+
+**Gotcha:** "wrap each check in try/catch" does not translate to bash. Under `set -eu` an unbound variable or hard failure inside a check function aborts the whole script regardless of guards at the call site, so one broken probe would kill an entire client health check.
+
+**Fix (assess.sh):** `run_check` executes each check in a subshell that serialises its findings to a scratch file; the parent replays them. A check that dies produces one `internal` finding and the scan continues. Same architecture as Pester's per-block isolation, hand-rolled.
