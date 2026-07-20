@@ -19,7 +19,8 @@
 
 [CmdletBinding()]
 param(
-  [ValidateSet("property")]
+  # Keep this list in step with the industry gate in install.sh.
+  [ValidateSet("property", "finance", "investment", "property-development", "small-business")]
   [string] $Industry = "property",
 
   [ValidateSet("google", "microsoft")]
