@@ -9,8 +9,8 @@
 Everything below is built and verified locally but UNCOMMITTED in both repos.
 
 - [x] Commit claude-installer (36af436 assess.sh + harness, acb29f7 installer fixes + .bat, 0fd6820 memory files)
-- [ ] Push claude-installer (main is 3 ahead of origin; one-liners stay stale until pushed)
-- [ ] Commit + push claude-templates (4 industry scaffolds, auto-discovery in build-bundles.py), then tag v0.2.0 so all 10 bundles get released. Until tagged, the widened industry gates in both installers 404 at download time for the four new industries.
+- [x] Push claude-installer (7510d65 on origin/main, one-liners live)
+- [x] claude-templates committed, pushed, v0.2.0 tagged. Release workflow green: all 10 bundles + checksums attached.
 - [ ] Field testing: 3 sessions (~60 min total) per the HTML guide artifact "Claude Installer Field Test Guide" (claude.ai/code/artifact/4fa157aa-9078-4355-8569-92f9476bac35): fresh Win11, macOS (first bash 3.2 run of assess.sh), Tom's QCC box (assess only)
 - [ ] Optional: GitHub Actions CI matrix (windows-latest + macos-latest run assess + harness on every push) — offered, not yet wired
 
@@ -65,7 +65,7 @@ Full port of assess.ps1: same finding IDs, maturity levels, readiness gates, JSO
 - [x] `.github/workflows/release.yml` — tag push → build → attach to release
 - [x] v0.1.0 tagged and released with property-google + property-microsoft tarballs
 - [x] `finance`, `investment`, `property-development`, `small-business` scaffolded (2026-07-20): manifest + mcp.json ({{PLACEHOLDER}} tokens only, verified-real MCP servers) + README + starter skill each. build-bundles.py now auto-discovers industries with a manifest.json; all 10 bundles build clean locally.
-- [ ] Tag claude-templates v0.2.0 to release the 10 bundles (blocker for the four new industries installing)
+- [x] v0.2.0 tagged and released: 10 bundles + checksums.txt attached, workflow green (2026-07-20)
 
 ## V1 acceptance test
 
